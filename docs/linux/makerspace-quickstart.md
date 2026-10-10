@@ -72,12 +72,43 @@ cargo run -p cli -- cut square.svg --device cameo1 --dry-run   # prints the byte
    - **Material** sets speed and force from a preset (Vinyl Sticker, Cardstock…).
    - **Spd**, **Force** and **Passes** override the preset. Leave them blank to use it. The
      Cameo 1's speed goes up to 10.
-   - **Out** off skips that layer.
-5. **Cutter:** load the mat or media using the machine's own button, pick the cutter, and press
-   **Connect cutter**. Then press **Start**. **Stop** cancels the cut, but the Cameo finishes the
-   moves it has already received. With several layers, **Resume** continues after each one.
-6. **Preview, presets and Cut Hosts…** opens the full cut dialog. Use it for the cut preview with
-   travel moves, to edit presets, and to cut through a Raspberry Pi Cut Host.
+   - **Out** off skips that layer, and its shapes go faint on the canvas.
+   - **Trk** (track enhancing) rolls the media back and forth first so the rollers grip; the Cameo 1
+     only does it at force 19 or more. **Pen** draws with a pen instead of cutting.
+   - **↑ / ↓** change the cut order. Everything on a layer is saved in the project file.
+   - **Beginner** (top right of the panel) hides everything but the material picker. Switch it on
+     once on a shared computer; it is remembered there.
+5. **Job:** pick the **Media** you loaded (12×12 or 12×24 mat, Letter, A4, roll); the artboard
+   follows it, and a cut past its edge is refused. Tick **Mirror (HTV)** for heat-transfer vinyl,
+   which is cut face down — it turns on by itself when you pick a material marked as cut
+   mirrored. Never flip the design as well, or it is mirrored twice.
+6. **Cutter:** type your name in **Operator** (for the usage log), load the mat or media using the
+   machine's own button, pick the cutter, and press **Connect cutter**. **Test cut** cuts a 10 mm
+   square with a triangle at X/Y using the top layer's settings — weed it to check the depth. Then
+   press **Start**; the estimated time is shown above it. **Stop** cancels the cut, but the Cameo
+   finishes the moves it has already received. With several layers, **Resume** continues after
+   each one.
+7. **Show cut preview** under the layers draws the cut order and the head's travel.
+   **Preview, presets and Cut Hosts…** opens the full cut dialog: edit presets there, and cut
+   through a Raspberry Pi Cut Host.
+
+### Design tools
+
+The tool rail on the left has **Offset…** (a contour around a sticker, or an inset), **Weed box…**
+(a border to weed to, with optional weed lines that stop short of the letters), **Copies…** (a
+grid of the selection), **Weld** (join overlapping letters into one shape), **To path**, and
+**Nest…** (pack the selection along the media to save vinyl). **Edit text…** in the Objects tab,
+or double-clicking text on the canvas, changes the words, size and font.
+
+### Print & cut
+
+1. **Registration marks** in the top bar opens Print & cut: add the marks for Letter or A4, then
+   **Export for printing** and print the sheet at 100 % (no "fit to page").
+2. Put the printed sheet on the mat with its top-left corner at the mat's top-left, load it, and
+   cut with **Print & cut** ticked in Cuts / Layers. The Cameo looks for the marks first (up to
+   40 s) and refuses the job if it cannot find them.
+3. Leave the marks out of any selection you weld, offset or nest; the tools refuse them. Print &
+   cut cannot be mirrored.
 
 **Classic layout** in the top bar switches back to the original layers and properties window.
 The window remembers which layout you used last.
@@ -108,10 +139,13 @@ computer at a time.
 
 A preset can carry **Notes** (brand, which side up), an advisory **Blade depth** (1–10, for the
 Cameo 1's hand-set ratchet blade — Cuthulhu never sends it) and **Cut mirrored (HTV)**. All three
-are shown under the material picker when a pass uses that preset. Cut mirrored is a reminder: the
-design is not flipped for you yet.
+are shown under the material picker when a pass uses that preset. Cut mirrored turns the job's
+**Mirror** on when the material is picked in the simple window, and the classic cut dialog has a
+**Cut mirrored** box; the design itself is never flipped, so do not flip it yourself.
 
-## Not supported yet
+## Not verified yet
 
-Track enhancing, pen (sketch) mode, print & cut with registration marks, and media size presets
-are not supported yet. See `docs/superpowers/plans/2026-10-09-cameo1-and-simple-ui.md` (Part C).
+Everything Cameo 1-specific — track enhancing, pen, test cut, finding registration marks and the
+`.deb` install — is built from the reference driver's source and tested without hardware, not yet
+on a real Cameo 1. `apps/desktop/MANUAL-CHECKLIST.md` lists what to try. A Raspberry Pi Cut Host
+must run the same build as the desktops (see `docs/cut-host.md`).
