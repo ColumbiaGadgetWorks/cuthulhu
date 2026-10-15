@@ -6,14 +6,21 @@ laid out like LightBurn. The Cameo 1 support is meant to go upstream once it has
 hardware. Until the hardware checklist in `apps/desktop/MANUAL-CHECKLIST.md` (§ Cameo 1) is
 ticked, treat every cut as a test cut and use scrap media.
 
-## 1. Build the package (once, on any Ubuntu / Debian machine)
+## 1. Build the package (once, on any Ubuntu 22.04+ / Debian 12+ machine)
+
+There is no prebuilt release yet, so build the package from the repository. Build once, then copy
+the `.deb` to the other computers; they do not need any of the build tools.
 
 ```sh
-sudo apt-get install -y build-essential pkg-config libudev-dev \
-  libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
-curl https://sh.rustup.rs -sSf | sh          # Rust, if not installed
+sudo apt-get install -y build-essential curl git pkg-config libssl-dev libudev-dev \
+  libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev file
+curl https://sh.rustup.rs -sSf | sh && . ~/.cargo/env   # Rust, if not installed
+# Node 22: the build runs the UI's `npm run build`, and Vite needs Node 20.19 or newer —
+# Debian 12's own nodejs is 18, so take it from NodeSource (or nvm) instead.
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
 cargo install tauri-cli --version '^2' --locked   # once
 git clone https://github.com/adman234/cuthulhu && cd cuthulhu
+npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once per checkout
 (cd apps/desktop && cargo tauri build --bundles deb,appimage)
 # → target/release/bundle/deb/cuthulhu_0.1.0_amd64.deb
 # → target/release/bundle/appimage/cuthulhu_0.1.0_amd64.AppImage
