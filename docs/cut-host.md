@@ -113,12 +113,18 @@ A Cameo is reached directly over USB (`nusb` opens `/dev/bus/usb/...` on Linux),
 OS leaves those device nodes `root:root 0664`. The `uaccess` tag that would normally grant access
 only applies to a logged-in seat user, which the `cuthulhu` system account is not, so without a
 rule the daemon's claim fails permission-denied and it reports "no cutter is attached" even though
-one is plugged in. Add a rule granting the `cuthulhu` group access to the Cameo's vendor id:
+one is plugged in. Add a rule granting the `cuthulhu` group access to each Cameo's USB id — the
+Cameo 5 Alpha is vendor `3844`, the original Cameo (Cameo 1) is Graphtec's `0b4d:1121`, and a rule
+for one does not cover the other:
 
 ```
 # /etc/udev/rules.d/60-cuthulhu.rules
 SUBSYSTEM=="usb", ATTR{idVendor}=="3844", MODE="0660", GROUP="cuthulhu"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0b4d", ATTR{idProduct}=="1121", MODE="0660", GROUP="cuthulhu"
 ```
+
+The kernel's `usblp` printer driver still binds a Cameo 1; the daemon detaches it when it opens the
+cutter, so nothing needs blacklisting.
 
 ```sh
 sudo udevadm control --reload-rules && sudo udevadm trigger
