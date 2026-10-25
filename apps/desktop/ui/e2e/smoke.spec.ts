@@ -3858,14 +3858,14 @@ test("a wheel pan during a drag carries the shape with the pointer and commits t
   await page.mouse.move(centre.x, centre.y);
   await page.mouse.down();
   await page.mouse.move(centre.x + 5 * v.scale, centre.y, { steps: 3 });
-  await page.mouse.wheel(0, 40); // a trackpad pan: the view moves up 40 px, the pointer 40 px lower in mm
+  await page.mouse.wheel(0, 48); // a trackpad pan: the view moves up 48 px, the pointer 48 px lower in mm
   await expect.poll(async () => (await readView(page)).ty).toBeLessThan(v.ty);
   await page.mouse.up();
 
   await expect.poll(async () => (await commitLog(page)).length).toBe(1);
   const [, , , , e, f] = (await commitLog(page))[0].m;
   expect(e).toBeCloseTo(5, 0);
-  expect(f).toBeCloseTo(40 / v.scale, 0);
+  expect(f).toBeCloseTo(48 / v.scale, 0);
 });
 
 test("a Group selected in the layers panel gets a box around its shapes and commits as itself", async ({ page }) => {
@@ -4479,13 +4479,13 @@ test("a queued align to the artboard uses the bed it lands on, not the one it wa
   await page.getByRole("button", { name: "Align horizontal centres" }).click(); // queued
 
   const before = (await readView(page)).scale;
-  await page.getByLabel("Machine").selectOption("puma"); // 600 mm bed
+  await page.getByLabel("Machine").selectOption("puma"); // starts on a 304.8 mm mat
   await expect.poll(async () => (await readView(page)).scale).not.toBeCloseTo(before, 6);
   await page.evaluate(() => (window as unknown as { __releaseCommits: () => Promise<void> }).__releaseCommits());
 
-  // Red's centre is 10; the Puma's is 300. The Cameo's 165 would give 155.
+  // Red's centre is 10; the Puma's mat's is 152.4. The Cameo's 165 would give 155.
   await expect.poll(async () => (await commitLog(page)).length).toBe(2);
-  expect((await commitLog(page))[1]).toMatchObject({ ids: [4], m: [1, 0, 0, 1, expect.closeTo(290, 6), 0] });
+  expect((await commitLog(page))[1]).toMatchObject({ ids: [4], m: [1, 0, 0, 1, expect.closeTo(142.4, 6), 0] });
 });
 
 test("the align row follows the preview while its commit is on the wire", async ({ page }) => {
