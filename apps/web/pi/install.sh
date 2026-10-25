@@ -6,6 +6,20 @@ set -eu
 [ "$(id -u)" -eq 0 ] || { echo "Run this with sudo: sudo ./install.sh" >&2; exit 1; }
 cd "$(dirname "$0")"
 
+# Checked before anything is installed: a package for another architecture installed cleanly
+# and then failed every start with "Exec format error", behind a link that answered nothing.
+want=$(cat ARCH 2>/dev/null || echo unknown)
+have=$(dpkg --print-architecture 2>/dev/null || echo unknown)
+if [ "$have" = armel ] || [ "$(uname -m)" = armv6l ]; then
+  echo "This Pi (an original Pi Zero / Zero W or a Pi 1) is not supported: use a Pi 2, 3, 4, 5 or Zero 2 W." >&2
+  exit 1
+fi
+if [ "$want" != "$have" ]; then
+  echo "This package is for $want, but this system is $have." >&2
+  echo "Download cuthulhu-web-linux-$have.tar.gz from the same release instead." >&2
+  exit 1
+fi
+
 id cuthulhu >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin cuthulhu
 # A Puma is a serial device.
 usermod -a -G dialout cuthulhu
@@ -30,6 +44,15 @@ install -m 0644 cuthulhu-web.service /etc/systemd/system/cuthulhu-web.service
 systemctl daemon-reload
 systemctl enable cuthulhu-web >/dev/null
 systemctl restart cuthulhu-web
+
+# `restart` returns once the process is spawned, not once it is serving. A server that exits at
+# once (a port already taken, a missing file) shows as not active a moment later.
+sleep 3
+if ! systemctl is-active --quiet cuthulhu-web; then
+  echo "cuthulhu-web did not stay running. Its log:" >&2
+  journalctl -u cuthulhu-web -n 20 --no-pager >&2
+  exit 1
+fi
 
 addr=$(hostname -I 2>/dev/null | awk '{print $1}')
 echo

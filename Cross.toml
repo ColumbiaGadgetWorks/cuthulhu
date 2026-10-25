@@ -17,3 +17,10 @@ pre-build = [
     "dpkg --add-architecture $CROSS_DEB_ARCH",
     "apt-get update && apt-get install --assume-yes --no-install-recommends libudev-dev:$CROSS_DEB_ARCH pkg-config",
 ]
+
+# The same, for 32-bit Raspberry Pi OS (a Pi 2, or any Pi flashed with the 32-bit image).
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update && apt-get install --assume-yes --no-install-recommends libudev-dev:$CROSS_DEB_ARCH pkg-config",
+]

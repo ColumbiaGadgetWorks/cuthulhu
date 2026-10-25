@@ -11,13 +11,26 @@ preflight checks, the same drivers. Only the window differs.
 
 ## Install
 
-On the Pi (64-bit Raspberry Pi OS), download `cuthulhu-web-linux-arm64.tar.gz` from the repository's
+Any Pi 2, 3, 4, 5 or Zero 2 W works. The original Pi Zero / Zero W and the Pi 1 do not: their
+ARMv6 chip is older than any build here.
+
+Find which package the Pi needs:
+
+```sh
+dpkg --print-architecture
+```
+
+`arm64` (64-bit Raspberry Pi OS) takes `cuthulhu-web-linux-arm64.tar.gz`; `armhf` (32-bit Raspberry
+Pi OS, and any Pi 2) takes `cuthulhu-web-linux-armhf.tar.gz`. Download it from the repository's
 Releases page (the `web-v…` releases), then:
 
 ```sh
-tar xzf cuthulhu-web-linux-arm64.tar.gz
+tar xzf cuthulhu-web-linux-<arch>.tar.gz
 sudo ./cuthulhu-web/install.sh
 ```
+
+The installer refuses the wrong package and names the right one, and checks the server is running
+before it prints the address.
 
 The installer:
 
@@ -76,6 +89,8 @@ program can hold a USB device at a time. Run one or the other on a Pi, not both.
 
 ```sh
 cross build --release --locked --target aarch64-unknown-linux-gnu -p web --bin cuthulhu-web
+# 32-bit Raspberry Pi OS:
+cross build --release --locked --target armv7-unknown-linux-gnueabihf -p web --bin cuthulhu-web
 ```
 
 Building `-p web` on its own leaves out the desktop's Tauri shell, so nothing from GTK or WebKit is
