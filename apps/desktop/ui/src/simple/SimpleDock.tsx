@@ -332,7 +332,7 @@ export function SimpleDock(props: Props) {
   );
 
   return (
-    <div style={{ gridRow: props.gridRow, display: "grid", gridTemplateRows: "auto 1fr auto", minHeight: 0, borderLeft: "1px solid var(--border)", background: "var(--panel)" }}>
+    <div style={{ gridRow: props.gridRow, gridColumn: "3", display: "grid", gridTemplateRows: "auto 1fr auto", minHeight: 0, borderLeft: "1px solid var(--border)", background: "var(--panel)" }}>
       <div role="tablist" aria-label="Dock" style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
         {tabBtn("cuts", "Cuts / Layers")}
         {tabBtn("objects", "Objects")}

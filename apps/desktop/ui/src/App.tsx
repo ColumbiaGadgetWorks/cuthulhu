@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "./transport";
 import * as ipc from "./ipc";
 import { Canvas2DRenderer } from "./render/Canvas2DRenderer";
 import { unionBounds, type Affine6, type Bounds, type Scene, type ShapeGeom } from "./render/hittest";
@@ -804,7 +804,7 @@ export function App() {
         height: "100%",
       }}
     >
-      <div style={{ gridColumn: "1 / -1" }}>
+      <div style={{ gridColumn: "1 / -1", gridRow: "1" }}>
         <TopBar
           machines={machines}
           currentMachineId={doc?.machine?.id ?? null}
@@ -860,6 +860,10 @@ export function App() {
           onToggleLayout={toggleLayout}
         />
       </div>
+      {/* Every area names its column: an area that set only its row (the dock) was placed first by
+          CSS grid's auto-placement and took the first column, pushing the tool rail and canvas
+          right of it. */}
+      <div style={{ gridColumn: "1", gridRow: layout === "simple" ? "2 / 4" : "2", display: "grid", minHeight: 0 }}>
       <ToolRail
         tool={tool}
         selectionCount={selected.length}
@@ -869,10 +873,11 @@ export function App() {
         onDelete={deleteSelected}
         shapeTools={shapeTools}
       />
+      </div>
       {/* The wrapper is what lets the canvas fill its grid cell: a canvas sized 100% directly in
           the grid adds its intrinsic 300×150 to the track minimum and never shrinks. `data-view`
           lets e2e turn document mm into page px, since the canvas's pixels are unreadable there. */}
-      <div style={{ position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ gridColumn: "2", gridRow: "2", position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
         <canvas
           ref={canvasRef}
           data-testid="design-canvas"
@@ -900,7 +905,7 @@ export function App() {
           onOpenPrintCut={() => setPrintCutOpen(true)}
         />
       ) : (
-        <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", borderLeft: "1px solid var(--border)", minHeight: 0 }}>
+        <div style={{ gridColumn: "3", gridRow: "2", display: "grid", gridTemplateRows: "1fr 1fr", borderLeft: "1px solid var(--border)", minHeight: 0 }}>
           {objects}
         </div>
       )}
@@ -909,7 +914,7 @@ export function App() {
           <ColorPalette disabledReason={paletteDisabled} onPick={setStrokeColor} active={selectionStrokes} />
         </div>
       ) : null}
-      <div style={{ gridColumn: "1 / -1" }}>
+      <div style={{ gridColumn: "1 / -1", gridRow: layout === "simple" ? "4" : "3" }}>
         <StatusBar
           machine={doc?.machine ?? null}
           artboard={doc?.artboard ?? null}

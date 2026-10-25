@@ -90,6 +90,10 @@ jobs:
       # have to cross-compile what it cannot call.
       - name: Cross build the daemon for the Pi
         run: cross build --release --locked --target aarch64-unknown-linux-gnu -p cut-host --bin cuthulhu-cutd --no-default-features
+      # The web UI server ships to the same Pi (docs/web-ui.md); `-p web` alone builds the desktop
+      # crate without Tauri, which is what keeps GTK and WebKit out of a cross build.
+      - name: Cross build the web UI server for the Pi
+        run: cross build --release --locked --target aarch64-unknown-linux-gnu -p web --bin cuthulhu-web
 
   ui:
     runs-on: ubuntu-latest

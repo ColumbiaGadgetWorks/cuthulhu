@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -11,9 +11,17 @@ path = "src/lib.rs"
 [[bin]]
 name = "desktop"
 path = "src/main.rs"
+required-features = ["app"]
+
+# `app` is the Tauri shell. Without it the crate is the logic the shell drives (document state,
+# devices, presets, usage), which the Pi's web server (`apps/web`) runs too, on a machine with no
+# GTK or WebKit to link against.
+[features]
+default = ["app"]
+app = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-build"]
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", optional = true }
 
 [dependencies]
 geometry = { path = "../../crates/geometry" }
@@ -24,8 +32,8 @@ driver-core = { path = "../../crates/driver-core" }
 driver-registry = { path = "../../crates/driver-registry" }
 cut-host = { path = "../../crates/cut-host" }
 trace = { path = "../../crates/trace" }
-tauri = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

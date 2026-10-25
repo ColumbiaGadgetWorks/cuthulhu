@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Release (Pi web UI)
+
+# The browser-served editor (`apps/web`), released on its own `web-v*` tags so it can move on a
+# different cadence from the desktop apps. A manual run with a `tag` input creates the tag and
+# publishes; blank, it builds the packages without publishing.
+on:
+  push:
+    tags: ["web-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create and publish to (e.g. web-v0.1.0); blank builds only"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # 64-bit Raspberry Pi OS (Pi 3, 4, 5, Zero 2 W).
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+            cross: true
+          # Any other 64-bit Linux box next to a cutter.
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+            cross: false
+    # 22.04 for the oldest glibc we build against, as in the desktop release.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+      - name: Install native deps
+        if: ${{ !matrix.cross }}
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y libudev-dev pkg-config
+      # `-p web` alone, so the desktop crate is built without its Tauri shell: no GTK or WebKit on
+      # the Pi, and none needed to cross-compile.
+      - name: Build
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --locked --target ${{ matrix.target }} -p web --bin cuthulhu-web
+      # The UI is the desktop's committed bundle (`apps/desktop/ui/dist`), which CI keeps in step
+      # with its source, so no Node is needed here.
+      - name: Package
+        run: |
+          dir=cuthulhu-web
+          mkdir -p "$dir"
+          cp target/${{ matrix.target }}/release/cuthulhu-web "$dir/"
+          cp -r apps/desktop/ui/dist "$dir/ui"
+          cp apps/web/pi/install.sh apps/web/pi/cuthulhu-web.service apps/web/pi/60-cuthulhu-web.rules "$dir/"
+          cp docs/web-ui.md "$dir/README.md"
+          tar czf cuthulhu-web-linux-${{ matrix.arch }}.tar.gz "$dir"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ matrix.arch }}
+          path: cuthulhu-web-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/web-v') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: Pi web UI ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          # Not "latest": that badge belongs to the desktop release people download most.
+          make_latest: false
+          files: dist/*
+          body: |
+            The cuthulhu editor served from the computer the cutter is plugged into. Open it in any
+            browser on your network (laptop, tablet, phone) and design and cut from there; nothing
+            to install on those computers.
+
+            | Computer | File |
+            | --- | --- |
+            | Raspberry Pi (64-bit Raspberry Pi OS) | `cuthulhu-web-linux-arm64.tar.gz` |
+            | Other 64-bit Linux | `cuthulhu-web-linux-amd64.tar.gz` |
+
+            **Install on the Pi:**
+
+            ```sh
+            tar xzf cuthulhu-web-linux-arm64.tar.gz
+            sudo ./cuthulhu-web/install.sh
+            ```
+
+            It prints the address to open, with the access token, once. Bookmark the address after.
+
+            One document is shared by everyone using the page: two people editing at once edit the
+            same design. Full notes are in `README.md` inside the archive.
