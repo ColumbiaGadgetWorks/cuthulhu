@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 name: Release
 
-# A `v*` tag publishes the Windows installer to that tag's GitHub release. `workflow_dispatch`
-# builds the same installer without publishing, so the packaging can be checked before a tag exists.
+# A `v*` tag publishes the Windows installer to that tag's GitHub release. A manual run with a
+# `tag` input does the same and creates the tag, for when a tag cannot be pushed from where the
+# release is being cut; with the input blank it builds the installer without publishing.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create and publish to (e.g. v0.1.0); blank builds only"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -44,9 +50,11 @@ jobs:
           name: cuthulhu-windows
           path: apps/desktop/dist-release/*.exe
       - name: Publish to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: apps/desktop/dist-release/*.exe
           generate_release_notes: true
           body: |
