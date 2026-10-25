@@ -5,6 +5,8 @@
 //!   its error (400) shaped as the desktop's command errs.
 //! - `POST /upload?name=<file>`: the body saved as that file in the files directory, for Open,
 //!   Trace and anything else the desktop reads through a native picker.
+//! - `GET /files`: what the files directory holds (name, size, when it was saved), newest first, for
+//!   opening a project kept on the server.
 //! - `GET /files/<file>`: a saved file, as a download, for Save and the exports.
 //! - `GET /?token=<token>`: sets the access cookie and redirects to `/`.
 //! - Anything else: the UI's static files, with `index.html` for a path that is not one.
@@ -37,7 +39,8 @@ pub fn run(cfg: Config) -> Result<(), String> {
 
     let (dev, events) = DeviceManagerHandle::new(Arc::new(HardwareBackendFactory));
     let dev = dev.with_usage_log(desktop::usage::default_usage_path());
-    let ctx = Arc::new(Ctx { state: std::sync::Mutex::new(AppState::new()), dev, files });
+    let updates = crate::update::Updates::new(&cfg.data, Path::new(crate::update::STATUS_FILE), cfg.token.is_some());
+    let ctx = Arc::new(Ctx { state: std::sync::Mutex::new(AppState::new()), dev, files, updates });
 
     // The desktop's event bridge forwards these to the webview. A browser polls
     // `get_device_state` instead, so all that is left to do with each event is the usage log's.
@@ -184,6 +187,10 @@ fn handle(ctx: &Ctx, ui: &Path, token: Option<&str>, mut req: Request) {
                 },
             }
         }
+        (Method::Get, "/files") | (Method::Get, "/files/") => match crate::files::list(&ctx.files) {
+            Ok(list) => json(200, &serde_json::to_value(list).unwrap_or_default()),
+            Err(e) => json(500, &serde_json::Value::String(e)),
+        },
         (Method::Get, p) if p.starts_with("/files/") => {
             let name = decode(p.trim_start_matches("/files/"));
             match crate::files::resolve(&ctx.files, &name).and_then(|f| std::fs::read(f).map_err(|e| e.to_string())) {

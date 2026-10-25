@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Starts the root updater when the unprivileged web server asks for an update (update.sh).
+[Unit]
+Description=cuthulhu web UI update requests
+
+[Path]
+PathExists=/var/lib/cuthulhu-web/update-request
+
+[Install]
+WantedBy=multi-user.target

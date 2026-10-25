@@ -26,6 +26,7 @@ pub struct Ctx {
     pub state: Mutex<AppState>,
     pub dev: DeviceManagerHandle,
     pub files: PathBuf,
+    pub updates: crate::update::Updates,
 }
 
 pub type Reply = Result<Value, Value>;
@@ -208,6 +209,17 @@ pub fn dispatch(ctx: &Ctx, cmd: &str, a: &Value) -> Reply {
         // A browser uploads the image instead (`POST /upload`), and names it by what it was saved as.
         "pick_image" => not_here("The native file picker"),
         "force_quit" => not_here("Quitting the server from the page"),
+        // The server's own commands, which the desktop has no counterpart for (`update.rs`).
+        "web_update_status" => Ok(ctx.updates.status()),
+        "web_update_check" => ctx.updates.check(),
+        "web_update_apply" => {
+            let tag: String = arg(a, "tag")?;
+            ctx.updates.apply(&tag)
+        }
+        "web_update_set_repo" => {
+            let repo: String = arg(a, "repo")?;
+            ctx.updates.set_repo(&repo)
+        }
         _ => Err(Value::String(format!("unknown command {cmd}"))),
     }
 }
@@ -241,7 +253,7 @@ mod tests {
 
     fn ctx(dir: &std::path::Path) -> Ctx {
         let (dev, _events) = DeviceManagerHandle::new(std::sync::Arc::new(driver_registry::HardwareBackendFactory));
-        Ctx { state: Mutex::new(AppState::new()), dev, files: dir.to_path_buf() }
+        Ctx { state: Mutex::new(AppState::new()), dev, files: dir.to_path_buf(), updates: crate::update::Updates::new(dir, &dir.join("status.json"), false) }
     }
 
     #[test]

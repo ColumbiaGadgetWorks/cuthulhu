@@ -23,10 +23,23 @@ const CLICK_SLOP_PX = 3;
 /** Some wheels report lines rather than pixels; one line is about one line of text. */
 const LINE_PX = 16;
 
+/** A curved double-headed arrow, as rotate cursors are drawn elsewhere: CSS has no rotate cursor of
+ *  its own, and the crosshair it used said nothing about what a drag there would do. Dark outline
+ *  under white so it reads on the dark canvas and on a light shape alike. */
+const ROTATE_CURSOR = (() => {
+  const arc = "M6 15 A9 9 0 0 1 18 15";
+  const heads = "M3 12 L6 15 L9 12 M15 12 L18 15 L21 12";
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'>` +
+    `<path d='${arc} ${heads}' stroke='#111' stroke-width='4'/>` +
+    `<path d='${arc} ${heads}' stroke='white' stroke-width='2'/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+})();
+
 const CURSORS: Record<HandleKind | "pan", string> = {
   nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize",
   n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize",
-  rotate: "crosshair", move: "move", pan: "grab",
+  rotate: ROTATE_CURSOR, move: "move", pan: "grab",
 };
 
 type Gesture =

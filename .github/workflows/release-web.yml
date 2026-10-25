@@ -63,7 +63,9 @@ jobs:
           mkdir -p "$dir"
           cp target/${{ matrix.target }}/release/cuthulhu-web "$dir/"
           cp -r apps/desktop/ui/dist "$dir/ui"
-          cp apps/web/pi/install.sh apps/web/pi/cuthulhu-web.service apps/web/pi/60-cuthulhu-web.rules "$dir/"
+          cp apps/web/pi/install.sh apps/web/pi/update.sh apps/web/pi/cuthulhu-web.service \
+            apps/web/pi/cuthulhu-web-update.service apps/web/pi/cuthulhu-web-update.path \
+            apps/web/pi/60-cuthulhu-web.rules "$dir/"
           cp docs/web-ui.md "$dir/README.md"
           # What install.sh compares with `dpkg --print-architecture`: `uname -m` reads aarch64 on a
           # 32-bit Raspberry Pi OS running its default 64-bit kernel, where an arm64 build cannot run.

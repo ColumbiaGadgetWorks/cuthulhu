@@ -5,6 +5,13 @@ export function scrubValue(v: number, dx: number, step: number, min = -Infinity)
   return Math.max(min, v + dx * step);
 }
 
+/** Two decimals, trailing zeros dropped: a hundredth of a mm is finer than any blade, and the raw
+ *  float of a rotated or scaled shape read 39.27282321899738. Display only; edits send what was
+ *  typed. */
+export function formatMm(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 type Props = {
   label: string;
   value: number;
@@ -64,7 +71,7 @@ export function NumberField({ label, value, step = 1, min, disabled, onChange }:
       </span>
       <input
         type="number"
-        value={preview ?? value}
+        value={formatMm(preview ?? value)}
         step={step}
         min={min}
         disabled={disabled}

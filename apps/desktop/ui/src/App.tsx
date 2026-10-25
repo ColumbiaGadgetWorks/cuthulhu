@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { listen } from "./transport";
+import { download, isWeb, listen } from "./transport";
+import { PiFilesDialog } from "./web/PiFilesDialog";
+import { ServerDialog } from "./web/ServerDialog";
 import * as ipc from "./ipc";
 import { Canvas2DRenderer } from "./render/Canvas2DRenderer";
 import { unionBounds, type Affine6, type Bounds, type Scene, type ShapeGeom } from "./render/hittest";
@@ -195,6 +197,8 @@ export function App() {
   const [textOpen, setTextOpen] = useState<null | "new" | TextSource>(null);
   const [shapeTool, setShapeTool] = useState<"offset" | "weed" | "copies" | "nest" | null>(null);
   const [printCutOpen, setPrintCutOpen] = useState(false);
+  const [piFilesOpen, setPiFilesOpen] = useState(false);
+  const [serverOpen, setServerOpen] = useState(false);
   const [tracePath, setTracePath] = useState<string | null>(null);
   const [status, setStatus] = useState<ipc.CutStatus>(ipc.DISCONNECTED_STATUS);
   /** The machine's material presets, for the properties panel's control. Loaded here rather
@@ -448,6 +452,15 @@ export function App() {
       setReadFailed(false);
     });
   const loadDocument = (path: string) => replaceWith(() => ipc.loadProject({ path }));
+  // Held for the whole load, not cleared before it: the backend has replaced the document by the
+  // time loadProject resolves, and a commit settling in between would drain into it (CodeRabbit on
+  // #301), as would an edit made while it loads.
+  const openPath = async (p: string) => {
+    await loadDocument(p);
+    setLastPath(p);
+    setSelected([]); // loaded doc may not contain the old ids
+    interaction.requestFit();
+  };
 
   const { repaint } = interaction;
   useEffect(() => {
@@ -800,7 +813,7 @@ export function App() {
       style={{
         display: "grid",
         gridTemplateRows: layout === "simple" ? "auto 1fr auto auto" : "auto 1fr auto",
-        gridTemplateColumns: layout === "simple" ? "auto 1fr 360px" : "auto 1fr 280px",
+        gridTemplateColumns: layout === "simple" ? "auto 1fr 400px" : "auto 1fr 280px",
         height: "100%",
       }}
     >
@@ -820,27 +833,27 @@ export function App() {
           }
           onSave={() =>
             run(async () => {
-              const p = await ipc.pickSavePath();
+              const p = await ipc.pickSavePath(lastPath ?? undefined);
               if (p) {
                 await ipc.saveProject({ path: p });
                 setLastPath(p);
               }
             })
           }
-          onOpen={() =>
+          // In a browser Open lists what is saved on the Pi (`PiFilesDialog`), which calls `openPath`.
+          onOpen={() => (isWeb() ? setPiFilesOpen(true) : run(async () => {
+            const p = await ipc.pickOpenPath();
+            if (p) await openPath(p);
+          }))}
+          onDownload={isWeb() ? () =>
             run(async () => {
-              const p = await ipc.pickOpenPath();
-              if (p) {
-                // Held for the whole load, not cleared before it: the backend has replaced the
-                // document by the time loadProject resolves, and a commit settling in between would
-                // drain into it (CodeRabbit on #301), as would an edit made while it loads.
-                await loadDocument(p);
-                setLastPath(p);
-                setSelected([]); // loaded doc may not contain the old ids
-                interaction.requestFit();
-              }
-            })
-          }
+              const name = lastPath ?? (await ipc.pickSavePath());
+              if (!name) return;
+              await ipc.saveProject({ path: name });
+              setLastPath(name);
+              download(name);
+            }) : undefined}
+          onServer={isWeb() ? () => setServerOpen(true) : undefined}
           onReload={() =>
             run(async () => {
               await loadDocument(lastPath!);
@@ -944,6 +957,16 @@ export function App() {
         <PrintCutDialog onChanged={refresh} onClose={() => setPrintCutOpen(false)} />
       ) : null}
       {usageOpen ? <UsageLogDialog onClose={() => setUsageOpen(false)} /> : null}
+      {piFilesOpen ? (
+        <PiFilesDialog
+          onOpen={(name) => {
+            setPiFilesOpen(false);
+            void run(() => openPath(name));
+          }}
+          onClose={() => setPiFilesOpen(false)}
+        />
+      ) : null}
+      {serverOpen ? <ServerDialog onClose={() => setServerOpen(false)} /> : null}
       {tracePath !== null ? (
         <TraceDialog path={tracePath} onInsert={onTraceInsert} onClose={() => setTracePath(null)} />
       ) : null}
