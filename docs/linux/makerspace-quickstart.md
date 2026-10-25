@@ -23,8 +23,8 @@ cargo install tauri-cli --version '^2' --locked   # once
 git clone https://github.com/adman234/cuthulhu && cd cuthulhu
 npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once per checkout
 (cd apps/desktop && cargo tauri build --bundles deb,appimage)
-# → target/release/bundle/deb/cuthulhu_0.2.0_amd64.deb
-# → target/release/bundle/appimage/cuthulhu_0.2.0_amd64.AppImage
+# → target/release/bundle/deb/cuthulhu_0.2.1_amd64.deb
+# → target/release/bundle/appimage/cuthulhu_0.2.1_amd64.AppImage
 ```
 
 `--bundles rpm` builds a Fedora package the same way.
@@ -32,7 +32,7 @@ npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once 
 ## 2. Install it on each computer
 
 ```sh
-sudo apt install ./cuthulhu_0.2.0_amd64.deb
+sudo apt install ./cuthulhu_0.2.1_amd64.deb
 ```
 
 The `.deb` does three things beyond copying the app:
@@ -54,7 +54,7 @@ rule by hand, once:
 ```sh
 sudo cp docs/linux/99-silhouette-cameo1.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
-chmod +x cuthulhu_0.2.0_amd64.AppImage && ./cuthulhu_0.2.0_amd64.AppImage
+chmod +x cuthulhu_0.2.1_amd64.AppImage && ./cuthulhu_0.2.1_amd64.AppImage
 ```
 
 Then unplug and replug the Cameo.

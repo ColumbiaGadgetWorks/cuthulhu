@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=cuthulhu web UI (the editor and cutter, served to a browser)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=cuthulhu
+Group=cuthulhu
+# Presets and the usage log live under the account's config directory; it has no home of its own.
+Environment=HOME=/var/lib/cuthulhu-web
+ExecStart=/usr/local/bin/cuthulhu-web --bind 0.0.0.0:8080 --ui /usr/local/share/cuthulhu-web/ui --data /var/lib/cuthulhu-web --token-file /etc/cuthulhu-web/token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/cuthulhu-web
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { ConfiguredPassDto } from "./cut/viewmodel";
-import { invoke } from "@tauri-apps/api/core";
+import { download, invoke, isWeb, uploadPicked } from "./transport";
 import { save as dialogSave, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 
 // ponytail: loose types for delta/snapshot payloads until Rust shape mirrors TS
@@ -100,7 +100,8 @@ export async function importSvg(args: Args) {
 }
 
 export async function saveProject(args: Args) {
-  return invoke("save_project", args);
+  await invoke("save_project", args);
+  if (isWeb()) download(args.path);
 }
 
 export async function loadProject(args: Args) {
@@ -484,10 +485,13 @@ export async function registrationStatus(): Promise<RegistrationStatus> {
 
 /** Writes the printable sheet — marks and artwork at true size on `paper` — to `path`. */
 export async function exportPrintSvg(path: string, paper: Paper): Promise<void> {
-  return invoke("export_print_svg", { path, paper });
+  await invoke("export_print_svg", { path, paper });
+  if (isWeb()) download(path);
 }
 
+// In a browser a "path" is the name the server keeps the file under, and the download is the save.
 export async function pickPrintPath(): Promise<string | null> {
+  if (isWeb()) return "cuthulhu-print.svg";
   return dialogSave({ defaultPath: "cuthulhu-print.svg", filters: [{ name: "SVG for printing", extensions: ["svg"] }] });
 }
 
@@ -533,10 +537,13 @@ export async function usageLog(limit: number): Promise<UsageEntry[]> {
 
 /** Writes the whole log as CSV at `path`; answers how many jobs it holds. */
 export async function exportUsageCsv(path: string): Promise<number> {
-  return invoke("export_usage_csv", { path });
+  const n = await invoke<number>("export_usage_csv", { path });
+  if (isWeb()) download(path);
+  return n;
 }
 
 export async function pickCsvSavePath(): Promise<string | null> {
+  if (isWeb()) return "cuthulhu-usage.csv";
   return dialogSave({ defaultPath: "cuthulhu-usage.csv", filters: [{ name: "CSV", extensions: ["csv"] }] });
 }
 
@@ -556,6 +563,8 @@ export async function setPresetsLocation(path: string | null): Promise<PresetsLo
 
 /** A folder rather than a file, so a share that holds no presets yet can still be chosen. */
 export async function pickPresetsFolder(): Promise<string | null> {
+  // The server keeps its own presets; there is no folder of the browser's to point it at.
+  if (isWeb()) return null;
   const r = await dialogOpen({ directory: true, multiple: false, title: "Folder for the shared presets.json" });
   return typeof r === "string" ? r : null;
 }
@@ -563,10 +572,12 @@ export async function pickPresetsFolder(): Promise<string | null> {
 const CUT_FILTER = [{ name: "cuthulhu project", extensions: ["cut"] }];
 
 export async function pickSavePath(): Promise<string | null> {
+  if (isWeb()) return "cuthulhu-project.cut";
   return dialogSave({ defaultPath: "cuthulhu-project.cut", filters: CUT_FILTER });
 }
 
 export async function pickOpenPath(): Promise<string | null> {
+  if (isWeb()) return uploadPicked(".cut");
   const r = await dialogOpen({ multiple: false, filters: CUT_FILTER });
   return typeof r === "string" ? r : null;
 }
@@ -614,6 +625,8 @@ export async function loadImagePreview(args: { path: string }): Promise<string> 
 }
 // Goes through Rust rather than the dialog plugin directly: the backend records what the user
 // picked and refuses to trace anything else, so choosing the file here is what grants access.
+// In a browser the upload is the choosing: the server reads only the files it holds.
 export async function pickImagePath(): Promise<string | null> {
+  if (isWeb()) return uploadPicked("image/png,image/jpeg,image/gif,image/bmp");
   return invoke("pick_image", {});
 }

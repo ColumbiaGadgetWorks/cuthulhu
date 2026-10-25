@@ -19,6 +19,7 @@ research tooling, not the product — do not grow it.
 cargo test --workspace --locked          # what CI runs; --locked is mandatory (see below)
 cargo test -p cutplan preflight          # one crate, filtered by test-name substring
 cargo run -p cli -- cut file.svg --dry-run
+cargo run -p web -- --ui apps/desktop/ui/dist --data /tmp/web   # browser UI on :8080 (docs/web-ui.md)
 UPDATE_IPC_INVENTORY=1 cargo test -p desktop --test ipc_inventory   # regenerate ipc-inventory.json
 
 P=apps/desktop/ui                        # every line below runs from the repo root

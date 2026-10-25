@@ -513,7 +513,7 @@ impl DeviceManagerHandle {
     /// host behind and the total approaches the sweep's — the same wait as before, just no longer
     /// blocking anything else meanwhile. No safety verb is on this path, which is why that is
     /// tolerable here and would not be on `status` or `cancel`.
-    pub(crate) fn host_views(&self) -> Vec<PairedHostView> {
+    pub fn host_views(&self) -> Vec<PairedHostView> {
         self.host_conns()
             .into_iter()
             .map(|(_, conn)| {
@@ -545,7 +545,7 @@ impl DeviceManagerHandle {
     /// Matched on the address as typed. Two spellings of one Pi (a name and its IP) read as two
     /// hosts here, which is the direction that fails safe: a warning not shown is the state before
     /// this existed.
-    pub(crate) fn existing_pairing(&self, address: &str, fingerprint: &str) -> Option<ExistingPairing> {
+    pub fn existing_pairing(&self, address: &str, fingerprint: &str) -> Option<ExistingPairing> {
         self.paired_hosts().into_iter().find(|h| h.address == address).map(|h| ExistingPairing {
             id: h.id,
             name: h.name,

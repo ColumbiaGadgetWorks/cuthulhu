@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The service account reaches the cutters' USB device nodes, which Raspberry Pi OS leaves root-only.
+# Cameo 5 Alpha (vendor 3844) and the original Cameo (Graphtec 0b4d:1121). Same rule as the Cut
+# Host's (docs/cut-host.md), so the two can share the `cuthulhu` group.
+SUBSYSTEM=="usb", ATTR{idVendor}=="3844", MODE="0660", GROUP="cuthulhu"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0b4d", ATTR{idProduct}=="1121", MODE="0660", GROUP="cuthulhu"
