@@ -11,7 +11,22 @@ type Props = {
   zoomPercent: number | null;
   /** Pointer position in document mm, or null when the pointer is off the canvas. */
   cursor: { x: number; y: number } | null;
+  /** The view commands; absent, the readout stands alone. */
+  onZoom?: (cmd: ZoomCommand) => void;
+  /** Whether there is a selection to zoom to. */
+  canZoomSelection?: boolean;
 };
+
+export type ZoomCommand = "in" | "out" | "actual" | "page" | "fit" | "selection";
+
+const zoomBtn = {
+  background: "var(--panel)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  padding: "1px 6px",
+  fontSize: 11,
+  cursor: "pointer",
+} as const;
 
 // Idle/Disconnected read as "nothing wrong" (green), a failed device is red, and every
 // other phase (connecting, actively cutting, cancelling…) is "busy" (accent).
@@ -21,7 +36,7 @@ function dotColor(phase: Phase): string {
   return "var(--accent)";
 }
 
-export function StatusBar({ machine, artboard, error, status, zoomPercent, cursor }: Props) {
+export function StatusBar({ machine, artboard, error, status, zoomPercent, cursor, onZoom, canZoomSelection }: Props) {
   return (
     <div
       style={{
@@ -48,7 +63,20 @@ export function StatusBar({ machine, artboard, error, status, zoomPercent, curso
           x {cursor.x.toFixed(1)}  y {cursor.y.toFixed(1)} mm
         </span>
       ) : null}
-      {zoomPercent !== null ? (
+      {onZoom ? (
+        // Rendered before a document loads too, disabled: appearing later made the bar taller after
+        // the canvas had been fitted, and Ctrl+0 then fitted a different canvas.
+        <span style={{ display: "flex", gap: 2, alignItems: "center" }}>
+          <button aria-label="Zoom out" title="Zoom out (Ctrl −, or the mouse wheel)" style={zoomBtn} disabled={zoomPercent === null} onClick={() => onZoom("out")}>−</button>
+          <button aria-label="Actual size" title="Actual size (Ctrl 1)" style={{ ...zoomBtn, minWidth: 48 }} disabled={zoomPercent === null} onClick={() => onZoom("actual")}>
+            <span data-testid="status-zoom" style={{ fontVariantNumeric: "tabular-nums" }}>{zoomPercent === null ? "–" : `${zoomPercent}%`}</span>
+          </button>
+          <button aria-label="Zoom in" title="Zoom in (Ctrl +, or the mouse wheel)" style={zoomBtn} disabled={zoomPercent === null} onClick={() => onZoom("in")}>+</button>
+          <button aria-label="Zoom to page" title="Zoom to page (Ctrl 0)" style={zoomBtn} disabled={zoomPercent === null} onClick={() => onZoom("page")}>Page</button>
+          <button aria-label="Zoom to fit" title="Zoom to fit every shape (Ctrl 3)" style={zoomBtn} disabled={zoomPercent === null} onClick={() => onZoom("fit")}>Fit</button>
+          <button aria-label="Zoom to selection" title="Zoom to selection (Ctrl 2)" style={zoomBtn} disabled={zoomPercent === null || !canZoomSelection} onClick={() => onZoom("selection")}>Selection</button>
+        </span>
+      ) : zoomPercent !== null ? (
         <span data-testid="status-zoom" style={{ fontVariantNumeric: "tabular-nums" }}>
           {zoomPercent}%
         </span>

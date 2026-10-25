@@ -8,8 +8,9 @@ ticked, treat every cut as a test cut and use scrap media.
 
 ## 1. Build the package (once, on any Ubuntu 22.04+ / Debian 12+ machine)
 
-There is no prebuilt release yet, so build the package from the repository. Build once, then copy
-the `.deb` to the other computers; they do not need any of the build tools.
+Each release on the repository's GitHub Releases page carries a prebuilt `.deb`, `.rpm` and
+AppImage: download the `.deb` and skip to step 2. To build it yourself instead, build once, then
+copy the `.deb` to the other computers; they do not need any of the build tools.
 
 ```sh
 sudo apt-get install -y build-essential curl git pkg-config libssl-dev libudev-dev \
@@ -22,8 +23,8 @@ cargo install tauri-cli --version '^2' --locked   # once
 git clone https://github.com/adman234/cuthulhu && cd cuthulhu
 npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once per checkout
 (cd apps/desktop && cargo tauri build --bundles deb,appimage)
-# → target/release/bundle/deb/cuthulhu_0.1.0_amd64.deb
-# → target/release/bundle/appimage/cuthulhu_0.1.0_amd64.AppImage
+# → target/release/bundle/deb/cuthulhu_0.2.0_amd64.deb
+# → target/release/bundle/appimage/cuthulhu_0.2.0_amd64.AppImage
 ```
 
 `--bundles rpm` builds a Fedora package the same way.
@@ -31,7 +32,7 @@ npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once 
 ## 2. Install it on each computer
 
 ```sh
-sudo apt install ./cuthulhu_0.1.0_amd64.deb
+sudo apt install ./cuthulhu_0.2.0_amd64.deb
 ```
 
 The `.deb` does three things beyond copying the app:
@@ -53,7 +54,7 @@ rule by hand, once:
 ```sh
 sudo cp docs/linux/99-silhouette-cameo1.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
-chmod +x cuthulhu_0.1.0_amd64.AppImage && ./cuthulhu_0.1.0_amd64.AppImage
+chmod +x cuthulhu_0.2.0_amd64.AppImage && ./cuthulhu_0.2.0_amd64.AppImage
 ```
 
 Then unplug and replug the Cameo.

@@ -9,7 +9,7 @@ import { IDENTITY, compose, transformBounds } from "./render/affine";
 import { outermost, shapesUnder, toggleId } from "./interaction/marquee";
 import { AXIS, alignMoves, distributeBlock, distributeMoves, type AlignMode, type Axis, type Unit } from "./interaction/align";
 import type { Matrix } from "./interaction/transform";
-import { useCanvasInteraction, type CommitOutcome, type EditsLock } from "./interaction/useCanvasInteraction";
+import { useCanvasInteraction, type CommitOutcome, type DrawKind, type EditsLock } from "./interaction/useCanvasInteraction";
 import { viewMatrix, zoomPercent } from "./interaction/viewport";
 import { TopBar } from "./panels/TopBar";
 import { ToolRail } from "./panels/ToolRail";
@@ -18,7 +18,7 @@ import { PropertiesPanel } from "./panels/PropertiesPanel";
 import { selectionCutLineType, type CutLineTypeJson } from "./panels/cutLineType";
 import { effectiveMaterials, selectionAssignment, summariseEffectiveMaterial } from "./panels/materialPreset";
 import type { Preset } from "./cut/viewmodel";
-import { StatusBar } from "./panels/StatusBar";
+import { StatusBar, type ZoomCommand } from "./panels/StatusBar";
 import { CutDialog } from "./cut/CutDialog";
 import { TraceDialog } from "./trace/TraceDialog";
 import { UsageLogDialog } from "./usage/UsageLogDialog";
@@ -171,7 +171,7 @@ export function App() {
   const [doc, setDoc] = useState<DocSnapshot | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [machines, setMachines] = useState<MachineProfile[]>([]);
-  const [tool, setTool] = useState("select");
+  const [tool, setTool] = useState<"select" | DrawKind>("select");
   const [error, setErrorState] = useState<string | null>(null);
   // When the message on screen was raised, on the clock the canvas stamps its requests with: a
   // commit clears only a message older than the request it carries (Copilot on #301).
@@ -376,6 +376,14 @@ export function App() {
       }
     },
     sceneRev: docRev,
+    drawTool: tool === "select" ? null : tool,
+    // Back to Select once the shape is down, so the next press moves what was drawn rather than
+    // drawing another on top of it — what the tool rail's one-shot buttons always did.
+    onDraw: (kind, b) => {
+      setTool("select");
+      const shape = kind === "rect" ? { Rect: { w: b.w, h: b.h } } : { Ellipse: { rx: b.w / 2, ry: b.h / 2 } };
+      void edit(async () => selectAdded(await ipc.addPrimitive({ parent: root, kind: shape, at: [b.x, b.y] })));
+    },
   });
 
   // Every other command that changes the document, refused while Open or Reload replaces it and
@@ -431,13 +439,15 @@ export function App() {
   );
 
   // Inside `replaceDocument`, which has locked edits by then, so nothing joins the set while it waits.
-  const loadDocument = (path: string) =>
+  // New goes the same way as Open: it reuses ids just as a loaded document does.
+  const replaceWith = (replace: () => Promise<unknown>) =>
     interaction.replaceDocument(async () => {
       await Promise.all(editsStarted.current);
-      await ipc.loadProject({ path });
+      await replace();
       docGen.current++;
       setReadFailed(false);
     });
+  const loadDocument = (path: string) => replaceWith(() => ipc.loadProject({ path }));
 
   const { repaint } = interaction;
   useEffect(() => {
@@ -461,10 +471,54 @@ export function App() {
     });
   }, [edit, selected]);
 
+  // Each press its own key: a keyed edit replaces a queued one with the same key, and two quick
+  // presses must move twice.
+  const nudgeSeq = useRef(0);
+  const nudge = useCallback(
+    (dx: number, dy: number) => {
+      const ids = doc ? outermost(doc.nodes, selected) : [];
+      if (ids.length > 0) interaction.transformEach(`nudge:${nudgeSeq.current++}`, () => [{ ids, m: [1, 0, 0, 1, dx, dy] }]);
+    },
+    [doc, selected, interaction],
+  );
+  // A copy beside the selection, selected so the next drag moves it: Ctrl+D as everywhere else.
+  const duplicate = useCallback(() => {
+    if (selected.length === 0) return;
+    // `selectAdded` is declared below; it only reads its argument and `setSelected`.
+    void edit(async () => selectAdded(await ipc.arrayCopies({ ids: selected, cols: 2, rows: 1, gapXMm: 5, gapYMm: 0 })));
+  }, [edit, selected]);
+  // Mirrored in place about the selection's centre, read when it is sent like align's moves.
+  const flip = (axis: "x" | "y") => {
+    const ids = units;
+    interaction.transformEach(`flip:${axis}:${ids.join(",")}`, (sc, now) => {
+      const shapes = new Set(now.expand(ids));
+      const boxes = sc.nodes.filter((n) => shapes.has(n.id)).map((n) => n.bounds);
+      if (boxes.length === 0) return [];
+      const b = unionBounds(boxes);
+      return [{ ids, m: axis === "x" ? [-1, 0, 0, 1, 2 * b.x + b.w, 0] : [1, 0, 0, -1, 0, 2 * b.y + b.h] }];
+    });
+  };
+
+  const { requestFit, zoomTo, zoomStep, effectiveScene } = interaction;
+  const zoom = useCallback(
+    (cmd: ZoomCommand) => {
+      if (cmd === "in" || cmd === "out" || cmd === "actual") return zoomStep(cmd);
+      const shapes = cmd === "selection" ? new Set(expand(selected)) : null;
+      const boxes = effectiveScene.nodes.filter((n) => shapes === null || shapes.has(n.id)).map((n) => n.bounds);
+      // With nothing to fit, the page is what there is to look at.
+      if (cmd === "page" || boxes.length === 0) requestFit();
+      else zoomTo(unionBounds(boxes));
+    },
+    [zoomStep, zoomTo, requestFit, effectiveScene, expand, selected],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      // The editing shortcuts act on the canvas: with a dialog open, an arrow key or a letter
+      // belongs to the dialog, not to the shapes behind it.
+      const modal = document.querySelector('[aria-modal="true"]') !== null;
       if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
         if (selected.length === 0) return;
         e.preventDefault();
@@ -472,11 +526,35 @@ export function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !typing) {
         e.preventDefault();
         edit(() => (e.shiftKey ? ipc.redo() : ipc.undo()));
+      } else if (modal) {
+        return;
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a" && !typing) {
+        e.preventDefault();
+        if (doc) setSelected([...(doc.nodes[doc.root]?.children ?? [])]);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d" && !typing) {
+        e.preventDefault();
+        duplicate();
+      } else if (e.key.startsWith("Arrow") && !typing && !e.metaKey && !e.ctrlKey) {
+        if (selected.length === 0) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        nudge(dx, dy);
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === "2" || e.key === "3") && !typing) {
+        e.preventDefault();
+        zoom(e.key === "2" ? "selection" : "fit");
+      } else if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // The single-letter tool keys LightBurn and Inkscape share.
+        const key = e.key.toLowerCase();
+        if (e.key === "Escape" || key === "v") setTool("select");
+        else if (key === "r") setTool("rect");
+        else if (key === "e") setTool("ellipse");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, edit, deleteSelected]);
+  }, [selected, edit, deleteSelected, zoom, doc, duplicate, nudge]);
 
   const root = doc?.root ?? 0;
   // Bounds of a single selection in a given scene. The fields read the effective scene, which holds
@@ -656,6 +734,9 @@ export function App() {
     // Replaces the selection, so what is selected afterwards is the one welded Path.
     { label: "Weld", disabled: noSelection, onClick: () => edit(async () => selectAdded(await ipc.weld({ ids: selected }))) },
     { label: "To path", disabled: noSelection, onClick: () => edit(() => ipc.convertToPath({ ids: selected })) },
+    { label: "Duplicate", disabled: noSelection, onClick: duplicate },
+    { label: "Flip horizontal", disabled: noSelection, onClick: () => flip("x") },
+    { label: "Flip vertical", disabled: noSelection, onClick: () => flip("y") },
     { label: "Nest…", disabled: unitCount === 0 ? "Select the pieces to nest" : null, onClick: () => setShapeTool("nest") },
   ];
   const selectionNote = `${unitCount} piece${unitCount === 1 ? "" : "s"} selected`;
@@ -728,6 +809,15 @@ export function App() {
           machines={machines}
           currentMachineId={doc?.machine?.id ?? null}
           onSelectMachine={(id) => edit(() => ipc.setMachine({ machineId: id }))}
+          onNew={() =>
+            run(async () => {
+              if (doc && (doc.nodes[doc.root]?.children.length ?? 0) > 0 && !window.confirm("Discard the current design and start a new one?")) return;
+              await replaceWith(() => ipc.newDoc());
+              setLastPath(null);
+              setSelected([]);
+              interaction.requestFit();
+            })
+          }
           onSave={() =>
             run(async () => {
               const p = await ipc.pickSavePath();
@@ -774,8 +864,6 @@ export function App() {
         tool={tool}
         selectionCount={selected.length}
         onSelectTool={setTool}
-        onAddRect={() => edit(() => ipc.addPrimitive({ parent: root, kind: { Rect: { w: 20, h: 20 } } }))}
-        onAddEllipse={() => edit(() => ipc.addPrimitive({ parent: root, kind: { Ellipse: { rx: 10, ry: 10 } } }))}
         onAddText={() => setTextOpen("new")}
         onBoolean={onBooleanOp}
         onDelete={deleteSelected}
@@ -829,6 +917,8 @@ export function App() {
           status={status}
           zoomPercent={doc ? zoomPercent(interaction.view) : null}
           cursor={interaction.cursor}
+          onZoom={zoom}
+          canZoomSelection={selected.length > 0}
         />
       </div>
       {cutOpen && doc ? (

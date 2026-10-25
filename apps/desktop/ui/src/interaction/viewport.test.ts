@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CSS_PX_PER_MM, FIT_MARGIN_PX, MAX_SCALE, fitView, minScaleFor, panBy, screenToWorld,
-  wheelFactor, worldToScreen, zoomAt, zoomPercent,
+  ZOOM_STEP, isMouseWheel, wheelFactor, worldToScreen, zoomAt, zoomPercent,
 } from "./viewport";
 import type { Pt } from "../render/affine";
 
@@ -58,6 +58,20 @@ describe("viewport", () => {
   it("a wheel delta and its negation cancel, and scrolling up zooms in", () => {
     expect(wheelFactor(37) * wheelFactor(-37)).toBeCloseTo(1, 12);
     expect(wheelFactor(-100)).toBeGreaterThan(1);
+    expect(wheelFactor(100) * wheelFactor(-100)).toBeCloseTo(1, 12);
+  });
+
+  it("one mouse notch zooms one step, not e", () => {
+    expect(wheelFactor(-100)).toBeCloseTo(ZOOM_STEP, 12);
+    expect(wheelFactor(-125)).toBeCloseTo(ZOOM_STEP, 12); // Windows at 125% scaling
+    expect(wheelFactor(300)).toBeCloseTo(ZOOM_STEP ** -3, 12);
+  });
+
+  it("tells a mouse wheel from a trackpad scroll", () => {
+    expect(isMouseWheel({ deltaMode: 0, deltaX: 0, deltaY: 100 }, 1)).toBe(true);
+    expect(isMouseWheel({ deltaMode: 1, deltaX: 0, deltaY: 3 }, 1)).toBe(true);
+    expect(isMouseWheel({ deltaMode: 0, deltaX: 0, deltaY: 4 }, 1)).toBe(false);
+    expect(isMouseWheel({ deltaMode: 0, deltaX: 2, deltaY: 80 }, 1)).toBe(false);
   });
 
   it("100% is actual size", () => {

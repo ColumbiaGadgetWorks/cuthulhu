@@ -16,9 +16,12 @@ export const CSS_PX_PER_MM = 96 / 25.4;
 export const MAX_SCALE = 64 * CSS_PX_PER_MM; // 6400%
 export const FIT_MARGIN_PX = 24;
 export const ZOOM_STEP = 1.25;
-/** Pinch reports a few px per event and a mouse notch about 100. An exponential keeps both
+/** Pinch reports a few px per event and a mouse notch about 100. An exponential keeps a pinch
  *  proportional, and zooming in then out by the same delta lands exactly where it started. */
 export const WHEEL_ZOOM_RATE = 0.01;
+/** At or above this a vertical delta is a mouse notch rather than a trackpad's stream: a notch is
+ *  about 100 px (more under display scaling), a trackpad's events a few px each. */
+export const NOTCH_PX = 50;
 
 export const IDENTITY_VIEW: View = { scale: 1, tx: 0, ty: 0 };
 
@@ -72,6 +75,19 @@ export function zoomPercent(v: View): number {
   return Math.round((v.scale / CSS_PX_PER_MM) * 100);
 }
 
+/** Through the exponential a notch of 100 px zoomed by e (2.7×) in one click, so far that the
+ *  operator overshot every time. A notch takes one menu zoom step per notch instead. */
 export function wheelFactor(deltaY: number): number {
+  if (Math.abs(deltaY) >= NOTCH_PX) {
+    const notches = Math.max(1, Math.round(Math.abs(deltaY) / 100));
+    return ZOOM_STEP ** (-Math.sign(deltaY) * notches);
+  }
   return Math.exp(-deltaY * WHEEL_ZOOM_RATE);
+}
+
+/** A mouse wheel: line-mode deltas (Firefox), or one large vertical delta with no sideways part.
+ *  A trackpad scrolls in small two-axis deltas and pans; a mouse wheel zooms, as it does in
+ *  LightBurn and Silhouette Studio, where the people this is for have learnt it. */
+export function isMouseWheel(e: { deltaMode: number; deltaX: number; deltaY: number }, lineMode: number): boolean {
+  return e.deltaMode === lineMode || (e.deltaX === 0 && Math.abs(e.deltaY) >= NOTCH_PX);
 }

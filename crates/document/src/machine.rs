@@ -36,14 +36,18 @@ pub fn builtin_profiles() -> Vec<MachineProfile> {
     ]
 }
 
+/// The artboard a machine starts on: a 12×12 in mat, clamped to what the machine reaches. The full
+/// reach of a roll cutter is metres long, and fitting that to a window left a design the width of
+/// a matchstick; the media picker sizes it to anything else, a roll included.
+pub const DEFAULT_MEDIA_MM: f64 = 304.8;
+
+pub fn default_artboard(p: &MachineProfile) -> Rect {
+    Rect { x: 0.0, y: 0.0, w: p.width_mm.min(DEFAULT_MEDIA_MM), h: p.height_mm.min(DEFAULT_MEDIA_MM) }
+}
+
 impl Editor {
     pub fn set_machine(&mut self, p: MachineProfile) {
-        self.doc.artboard = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: p.width_mm,
-            h: p.height_mm,
-        };
+        self.doc.artboard = default_artboard(&p);
         self.doc.machine = Some(p);
     }
 }
@@ -66,6 +70,6 @@ mod tests {
             .find(|p| p.id == "puma")
             .unwrap();
         ed.set_machine(puma);
-        assert!(ed.doc.artboard.w > 300.0); // Puma is wide-format
+        assert_eq!((ed.doc.artboard.w, ed.doc.artboard.h), (DEFAULT_MEDIA_MM, DEFAULT_MEDIA_MM));
     }
 }

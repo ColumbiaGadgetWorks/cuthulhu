@@ -40,8 +40,8 @@ pub fn commit_transforms(state: tauri::State<AppStateHandle>, moves: Vec<Transfo
 }
 
 #[tauri::command]
-pub fn add_primitive(state: tauri::State<AppStateHandle>, parent: NodeId, kind: ShapeKind) -> Result<Delta, String> {
-    state.lock().unwrap().add_primitive(parent, kind).map_err(|e| e.to_string())
+pub fn add_primitive(state: tauri::State<AppStateHandle>, parent: NodeId, kind: ShapeKind, at: Option<[f64; 2]>) -> Result<Delta, String> {
+    state.lock().unwrap().add_primitive(parent, kind, at).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

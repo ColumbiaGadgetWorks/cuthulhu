@@ -65,8 +65,14 @@ impl AppState {
         Ok(self.editor.commit(d))
     }
 
-    pub fn add_primitive(&mut self, parent: NodeId, kind: ShapeKind) -> Result<Delta, CmdError> {
-        let d = commands::add_primitive(&mut self.editor.doc.ids, parent, kind)?;
+    /// `at` places the shape's local origin there, in the parent's frame: a shape drawn on the
+    /// canvas lands where it was drawn in one Delta, so one undo removes it rather than first
+    /// sending it back to the origin.
+    pub fn add_primitive(&mut self, parent: NodeId, kind: ShapeKind, at: Option<[f64; 2]>) -> Result<Delta, CmdError> {
+        let mut d = commands::add_primitive(&mut self.editor.doc.ids, parent, kind)?;
+        if let (Some([x, y]), Some(document::NodeOp::Add { node, .. })) = (at, d.0.first_mut()) {
+            node.transform = Affine::translate(x, y);
+        }
         Ok(self.editor.commit(d))
     }
 
@@ -276,6 +282,17 @@ mod tests {
         assert!(app.load_project(&path).is_err());
         assert!(app.editor.doc.get(id).is_some(),
             "a failed load must not replace the open document");
+    }
+
+    #[test]
+    fn a_drawn_shape_lands_where_it_was_drawn_and_one_undo_removes_it() {
+        let mut app = AppState::new();
+        let root = app.editor.doc.root;
+        let d = app.add_primitive(root, ShapeKind::Rect { w: 5.0, h: 5.0 }, Some([12.0, 34.0])).unwrap();
+        let id = if let document::NodeOp::Add { node, .. } = &d.0[0] { node.id } else { unreachable!() };
+        assert_eq!(app.editor.doc.get(id).unwrap().transform.apply(0.0, 0.0), (12.0, 34.0));
+        app.undo();
+        assert!(app.editor.doc.get(id).is_none());
     }
 
     #[test]

@@ -7,6 +7,8 @@ type Props = {
   machines: MachineProfile[];
   currentMachineId: string | null;
   onSelectMachine: (id: string) => void;
+  /** Starts an empty document. Absent, no button. */
+  onNew?: () => void;
   onSave: () => void;
   onOpen: () => void;
   onReload: () => void;
@@ -37,6 +39,7 @@ export function TopBar({
   machines,
   currentMachineId,
   onSelectMachine,
+  onNew,
   onSave,
   onOpen,
   onReload,
@@ -109,6 +112,11 @@ export function TopBar({
           </option>
         ))}
       </select>
+      {onNew ? (
+        <button aria-label="New" style={btn} onClick={onNew}>
+          New
+        </button>
+      ) : null}
       <button aria-label="Save" style={btn} onClick={onSave}>
         Save
       </button>

@@ -15,7 +15,14 @@ and track enhancing. Update the host whenever the desktops are updated.
 
 ## Build
 
-Build on the Pi, or cross-compile:
+Each GitHub release carries the daemon prebuilt for 64-bit Raspberry Pi OS as
+`cuthulhu-cutd-linux-arm64`. Download it on the Pi, then:
+
+```sh
+sudo install -m 0755 cuthulhu-cutd-linux-arm64 /usr/local/bin/cuthulhu-cutd
+```
+
+and skip to the next section. To build it yourself, build on the Pi, or cross-compile:
 
 ```sh
 cross build --release --target aarch64-unknown-linux-gnu -p cut-host --bin cuthulhu-cutd --no-default-features

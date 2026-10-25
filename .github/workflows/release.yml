@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 name: Release
 
-# A `v*` tag publishes the Windows installer to that tag's GitHub release. A manual run with a
-# `tag` input does the same and creates the tag, for when a tag cannot be pushed from where the
-# release is being cut; with the input blank it builds the installer without publishing.
+# A `v*` tag publishes the installers to that tag's GitHub release. A manual run with a `tag` input
+# does the same and creates the tag, for when a tag cannot be pushed from where the release is being
+# cut; with the input blank it builds everything and publishes nothing, so packaging can be checked
+# first (the files are on the run's page as artifacts).
 on:
   push:
     tags: ["v*"]
@@ -15,7 +16,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
@@ -39,26 +40,105 @@ jobs:
       - name: Build the installer
         run: cargo tauri build --bundles nsis
         working-directory: apps/desktop
-      - name: Collect the installer
-        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # 22.04 rather than latest: an AppImage or .deb runs on the glibc it was built against and newer,
+  # so building on the oldest supported Ubuntu is what lets it run on Debian 12 and Mint too.
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install native deps
         run: |
-          mkdir dist-release
-          cp target/release/bundle/nsis/*.exe dist-release/ 2>/dev/null || cp ../../target/release/bundle/nsis/*.exe dist-release/
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y libudev-dev pkg-config libwebkit2gtk-4.1-dev \
+            libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf file
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: apps/desktop/ui
+      - name: Install the Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Build the packages
+        run: cargo tauri build --bundles deb,rpm,appimage
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
-          name: cuthulhu-windows
-          path: apps/desktop/dist-release/*.exe
-      - name: Publish to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
-        uses: softprops/action-gh-release@v2
+          name: linux
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  # The Cut Host daemon for a Raspberry Pi (64-bit Raspberry Pi OS), built the way `docs/cut-host.md`
+  # documents and the CI's cross-pi job checks.
+  pi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Install cross
+        run: cargo install cross --locked
+      - name: Cross build the daemon
+        run: cross build --release --locked --target aarch64-unknown-linux-gnu -p cut-host --bin cuthulhu-cutd --no-default-features
+      - name: Name it for the release
+        run: |
+          mkdir out
+          cp target/aarch64-unknown-linux-gnu/release/cuthulhu-cutd out/cuthulhu-cutd-linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi
+          path: out/cuthulhu-cutd-linux-arm64
+          if-no-files-found: error
+
+  # One job publishes, after every build has succeeded: each build publishing its own files left a
+  # release half-filled whenever one platform failed, and wrote the notes once per platform.
+  publish:
+    needs: [windows, linux, pi]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      # The notes are written here and only here. GitHub's generated "What's Changed" list was
+      # appended under them before, which on this fork listed the release workflow's own PRs and
+      # nothing an operator would want to read.
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          files: apps/desktop/dist-release/*.exe
-          generate_release_notes: true
+          files: dist/*
           body: |
-            Windows installer (unsigned, so SmartScreen will warn: *More info → Run anyway*).
+            ## Downloads
 
+            | System | File |
+            | --- | --- |
+            | Windows 10/11 | `cuthulhu_*_x64-setup.exe` |
+            | Ubuntu, Debian, Mint | `cuthulhu_*_amd64.deb` (`sudo apt install ./cuthulhu_*_amd64.deb`) |
+            | Fedora | `cuthulhu-*.x86_64.rpm` |
+            | Any other Linux | `cuthulhu_*_amd64.AppImage` (`chmod +x`, then run it) |
+            | Raspberry Pi Cut Host | `cuthulhu-cutd-linux-arm64` (see `docs/cut-host.md`) |
+
+            **Windows:** the installer is unsigned, so SmartScreen warns: *More info → Run anyway*.
             A Silhouette cutter needs the WinUSB driver bound to it (for example with Zadig) before
             cuthulhu can see it. A serial GCC Puma needs no driver.
+
+            **Linux:** the `.deb` and `.rpm` install the udev rule that lets the app reach a Silhouette
+            without root. With the AppImage, install `docs/linux/99-silhouette-cameo1.rules` into
+            `/etc/udev/rules.d/` yourself, then replug the cutter.
