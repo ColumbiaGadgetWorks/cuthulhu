@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { ConfiguredPassDto } from "./cut/viewmodel";
-import { download, invoke, isWeb, uploadPicked } from "./transport";
+import { download, invoke, isWeb, serverFileName, uploadPicked } from "./transport";
 import { save as dialogSave, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 
 // ponytail: loose types for delta/snapshot payloads until Rust shape mirrors TS
@@ -100,8 +100,7 @@ export async function importSvg(args: Args) {
 }
 
 export async function saveProject(args: Args) {
-  await invoke("save_project", args);
-  if (isWeb()) download(args.path);
+  return invoke("save_project", args);
 }
 
 export async function loadProject(args: Args) {
@@ -571,9 +570,16 @@ export async function pickPresetsFolder(): Promise<string | null> {
 
 const CUT_FILTER = [{ name: "cuthulhu project", extensions: ["cut"] }];
 
-export async function pickSavePath(): Promise<string | null> {
-  if (isWeb()) return "cuthulhu-project.cut";
-  return dialogSave({ defaultPath: "cuthulhu-project.cut", filters: CUT_FILTER });
+/** `suggested` is the name it was opened or last saved as, offered again. */
+export async function pickSavePath(suggested?: string): Promise<string | null> {
+  if (isWeb()) {
+    // Saved on the Pi under the name typed; Download is what puts a copy on this computer.
+    const typed = window.prompt("Save on the Pi as", suggested ?? "cuthulhu-project.cut");
+    if (!typed?.trim()) return null;
+    const name = serverFileName(typed.trim());
+    return name.toLowerCase().endsWith(".cut") ? name : `${name}.cut`;
+  }
+  return dialogSave({ defaultPath: suggested ?? "cuthulhu-project.cut", filters: CUT_FILTER });
 }
 
 export async function pickOpenPath(): Promise<string | null> {

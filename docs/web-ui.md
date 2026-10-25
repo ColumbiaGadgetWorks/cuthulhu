@@ -54,9 +54,10 @@ To upgrade, unpack the newer release and run its `install.sh` again. To see the 
 
 The page is the desktop's editor. What is different in a browser:
 
-- **Open** uploads a `.cut` project from your computer; **Save** downloads it. A copy of everything
-  saved or opened also stays on the Pi, under `/var/lib/cuthulhu-web/files`, which is what
-  **Reload** reads.
+- **Save** asks for a name and saves the project on the Pi. **Open** lists the projects saved on
+  the Pi, newest first, or uploads one from your computer (which is then kept on the Pi too).
+  **Download** saves and puts a copy on your computer. Projects live in
+  `/var/lib/cuthulhu-web/files` on the Pi.
 - **Trace** uploads the image to trace.
 - **Print & Cut** and the usage log's CSV export download their files.
 - **Cut Hosts** are not offered: the Pi is the machine the cutter is on.
@@ -66,6 +67,25 @@ The page is the desktop's editor. What is different in a browser:
 the same design, and both their edits land in it. A browser picks up the other's changes on its next
 edit or reload. This suits one cutter with one person at it at a time, which is what a shared cutter
 is.
+
+## Updates
+
+**Pi…** in the top bar shows the version running and checks the repository's releases for a newer
+`web-v…` one with a package for this Pi. **Update to …** installs it: the server restarts, and the
+page says when the new version is up.
+
+The server itself runs as an unprivileged account and cannot install anything. It writes a request,
+and a root systemd unit (`cuthulhu-web-update.path`) downloads that release from GitHub and runs its
+`install.sh`. Its progress is in `/var/lib/cuthulhu-web-update/status.json`, and its log in
+`journalctl -u cuthulhu-web-update`.
+
+Updates come from `adman234/cuthulhu` unless changed in the same dialog. The repository can only be
+changed from the page while sign-in is on, because an update runs as root: whoever chooses where it
+comes from can run anything on the Pi. With sign-in off, change it over SSH:
+
+```sh
+echo '{"repo":"OWNER/NAME"}' | sudo -u cuthulhu tee /var/lib/cuthulhu-web/update-settings.json
+```
 
 ## Security
 
@@ -77,8 +97,14 @@ port to the internet.
 To change the token, put a new one in `/etc/cuthulhu-web/token` and
 `sudo systemctl restart cuthulhu-web`; every browser then signs in again with the new link.
 
-Running without a token at all (dropping `--token-file` from the service) lets anyone on the network
-use the cutter without signing in.
+To turn sign-in off, so the page opens without the token link:
+
+```sh
+sudo ./cuthulhu-web/install.sh --no-token
+```
+
+Anyone who can reach the Pi can then use the cutter. `--token` turns sign-in back on with the same
+token. The choice is kept across upgrades, including those started from the page.
 
 ## The same Pi as a Cut Host
 

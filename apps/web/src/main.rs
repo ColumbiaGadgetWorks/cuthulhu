@@ -8,6 +8,7 @@
 mod api;
 mod files;
 mod server;
+mod update;
 
 use std::path::PathBuf;
 

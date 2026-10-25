@@ -9,6 +9,9 @@ export type Modifiers = { shift: boolean; alt: boolean };
  *  and crossing zero would mirror it — a mirrored cut should be a command, not an overshoot. */
 export const MIN_SIZE_MM = 0.1;
 export const ROTATE_SNAP_RAD = Math.PI / 12; // 15°
+/** How close to a right angle a free rotation is pulled onto it: square to the mat is what a cut
+ *  is usually meant to be, and by hand the drag lands a degree or two off. */
+export const RIGHT_ANGLE_SNAP_RAD = (5 * Math.PI) / 180;
 
 /** The whole gesture as one world-space matrix: the preview applies it and the commit sends it,
  *  so what the operator releases is what is saved. */
@@ -28,8 +31,16 @@ function moveMatrix(start: Pt, cur: Pt, shift: boolean): Matrix {
 function rotateMatrix(box: Box, start: Pt, cur: Pt, shift: boolean): Matrix {
   const c = boxCenter(box);
   const swept = Math.atan2(cur.y - c.y, cur.x - c.x) - Math.atan2(start.y - c.y, start.x - c.x);
-  const angle = shift ? Math.round(swept / ROTATE_SNAP_RAD) * ROTATE_SNAP_RAD : swept;
-  return rotateAbout(angle, c);
+  return rotateAbout(shift ? Math.round(swept / ROTATE_SNAP_RAD) * ROTATE_SNAP_RAD : snapToRightAngle(box, swept), c);
+}
+
+/** The swept angle, moved onto a right angle when the box would end within the snap of one. The box's
+ *  own angle counts, so a shape already turned 30° snaps at 90°, not at 120°. */
+function snapToRightAngle(box: Box, swept: number): number {
+  const [a, b] = box.frame;
+  const end = Math.atan2(b, a) + swept;
+  const nearest = Math.round(end / (Math.PI / 2)) * (Math.PI / 2);
+  return Math.abs(end - nearest) <= RIGHT_ANGLE_SNAP_RAD ? swept + (nearest - end) : swept;
 }
 
 /** Works in the box's own frame — scale there about the anchor, then carry it back to world —

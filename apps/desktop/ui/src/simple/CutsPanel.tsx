@@ -37,7 +37,7 @@ type Props = {
   onOpenMarks: () => void;
 };
 
-const cell: CSSProperties = { padding: "3px 4px", fontSize: 12, borderBottom: "1px solid var(--border)" };
+const cell: CSSProperties = { padding: "3px 3px", fontSize: 12, borderBottom: "1px solid var(--border)" };
 const input: CSSProperties = {
   width: 34, background: "var(--workspace)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 12,
 };
@@ -159,6 +159,9 @@ export function CutsPanel(p: Props) {
           Draw or import shapes, then pick a colour below the canvas to put them on a layer.
         </p>
       ) : (
+        // Scrolls rather than clips: with track enhancing and pen on, the columns can still outgrow
+        // a narrow dock, and Passes, Trk and Pen were cut off past its edge with no way to reach them.
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ color: "var(--muted)", textAlign: "left" }}>
@@ -216,7 +219,7 @@ export function CutsPanel(p: Props) {
                         const parsed = parsePassKey(e.target.value);
                         p.onChange(i, { presetId: parsed.kind === "preset" ? parsed.presetId : null });
                       }}
-                      style={{ ...control, maxWidth: 110 }}
+                      style={{ ...control, maxWidth: 100 }}
                     >
                       {picker.options.map((o) => (
                         <option key={o.value} value={o.value}>{o.label}</option>
@@ -285,6 +288,7 @@ export function CutsPanel(p: Props) {
             })}
           </tbody>
         </table>
+        </div>
       )}
       {plan && plan.skippedNotCut > 0 ? (
         <p style={{ fontSize: 11, color: "var(--muted)" }}>

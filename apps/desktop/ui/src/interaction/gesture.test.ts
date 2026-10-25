@@ -71,6 +71,25 @@ describe("rotate", () => {
     close(apply(m, c), c);
     close(apply(m, { x: c.x + 10, y: c.y }), { x: c.x, y: c.y + 10 });
   });
+  it("a free rotation within 5° of a right angle lands on it, and one further off does not", () => {
+    const c = boxCenter(box);
+    const at = (deg: number) => {
+      const r = (deg * Math.PI) / 180;
+      return gestureMatrix("rotate", box, { x: c.x + 10, y: c.y }, { x: c.x + 10 * Math.cos(r), y: c.y + 10 * Math.sin(r) }, none);
+    };
+    close(apply(at(87), { x: c.x + 10, y: c.y }), { x: c.x, y: c.y + 10 });
+    close(apply(at(-93), { x: c.x + 10, y: c.y }), { x: c.x, y: c.y - 10 });
+    const r80 = (80 * Math.PI) / 180;
+    close(apply(at(80), { x: c.x + 10, y: c.y }), { x: c.x + 10 * Math.cos(r80), y: c.y + 10 * Math.sin(r80) });
+  });
+  it("snaps by where the shape ends, counting the turn it already had", () => {
+    const turned: Box = { frame: rotateAbout(Math.PI / 6, { x: 0, y: 0 }), w: 10, h: 4 }; // already 30°
+    const c = boxCenter(turned);
+    const r = (57 * Math.PI) / 180; // 30 + 57 = 87°, so it ends at 90°: a 60° turn
+    const m = gestureMatrix("rotate", turned, { x: c.x + 10, y: c.y }, { x: c.x + 10 * Math.cos(r), y: c.y + 10 * Math.sin(r) }, none);
+    const r60 = Math.PI / 3;
+    close(apply(m, { x: c.x + 10, y: c.y }), { x: c.x + 10 * Math.cos(r60), y: c.y + 10 * Math.sin(r60) });
+  });
   it("Shift snaps to 15° steps", () => {
     const c = boxCenter(box);
     const a = (50 * Math.PI) / 180;

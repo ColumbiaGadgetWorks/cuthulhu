@@ -10,6 +10,10 @@ type Props = {
   /** Starts an empty document. Absent, no button. */
   onNew?: () => void;
   onSave: () => void;
+  /** Saves and hands the project to the browser as a download (web only). */
+  onDownload?: () => void;
+  /** Opens the Pi server's version and update dialog (web only). */
+  onServer?: () => void;
   onOpen: () => void;
   onReload: () => void;
   canReload: boolean;
@@ -41,6 +45,8 @@ export function TopBar({
   onSelectMachine,
   onNew,
   onSave,
+  onDownload,
+  onServer,
   onOpen,
   onReload,
   canReload,
@@ -66,7 +72,11 @@ export function TopBar({
         borderBottom: "1px solid var(--border)",
       }}
     >
-      <span style={{ color: "var(--text)", fontWeight: 600, fontSize: 13, marginRight: 8 }}>cuthulhu</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)", fontWeight: 600, fontSize: 13, marginRight: 8 }}>
+        {/* The brand teal is too dark to read on this bar; lifted here only, not in the tab icon. */}
+        <img src="/favicon.svg" alt="" width={18} height={18} style={{ filter: "brightness(1.9)" }} />
+        cuthulhu
+      </span>
       <button aria-label="Undo" style={btn} onClick={onUndo}>
         Undo
       </button>
@@ -123,6 +133,11 @@ export function TopBar({
       <button aria-label="Open" style={btn} onClick={onOpen}>
         Open
       </button>
+      {onDownload ? (
+        <button aria-label="Download" title="Save, and download a copy to this computer" style={btn} onClick={onDownload}>
+          Download
+        </button>
+      ) : null}
       <button aria-label="Reload" style={btn} onClick={onReload} disabled={!canReload}>
         Reload
       </button>
@@ -132,6 +147,11 @@ export function TopBar({
       {onUsageLog ? (
         <button aria-label="Usage log" style={btn} onClick={onUsageLog}>
           Usage log…
+        </button>
+      ) : null}
+      {onServer ? (
+        <button aria-label="Pi server" title="Version and updates" style={btn} onClick={onServer}>
+          Pi…
         </button>
       ) : null}
       {layout && onToggleLayout ? (

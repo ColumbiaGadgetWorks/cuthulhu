@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Install a cuthulhu web UI update the page asked for
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/cuthulhu-web/update.sh
