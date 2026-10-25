@@ -1,5 +1,5 @@
 {
-  "add_primitive": ["kind", "parent"],
+  "add_primitive": ["at", "kind", "parent"],
   "add_registration_marks": ["area"],
   "add_text": ["family", "parent", "sizeMm", "text"],
   "array_copies": ["cols", "gapXMm", "gapYMm", "ids", "rows"],

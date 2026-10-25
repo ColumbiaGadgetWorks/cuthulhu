@@ -34,12 +34,7 @@ impl Document {
         let mut nodes = HashMap::new();
         nodes.insert(root, Node::container(root, NodeKind::Layer));
         let first_profile = crate::machine::builtin_profiles().into_iter().next().unwrap();
-        let artboard = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: first_profile.width_mm,
-            h: first_profile.height_mm,
-        };
+        let artboard = crate::machine::default_artboard(&first_profile);
         Document {
             nodes,
             root,

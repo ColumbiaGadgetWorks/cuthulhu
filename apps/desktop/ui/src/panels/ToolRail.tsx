@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { CSSProperties } from "react";
 import type { BoolOp } from "../App";
+import type { DrawKind } from "../interaction/useCanvasInteraction";
+
+type Tool = "select" | DrawKind;
 
 type Props = {
-  tool: string;
+  tool: Tool;
   selectionCount: number;
-  onSelectTool: (tool: string) => void;
-  onAddRect: () => void;
-  onAddEllipse: () => void;
+  onSelectTool: (tool: Tool) => void;
   onAddText: () => void;
   onBoolean: (op: BoolOp) => void;
   onDelete: () => void;
@@ -20,7 +21,8 @@ export type ShapeTool = { label: string; disabled: string | null; onClick: () =>
 
 const btn = (active: boolean): CSSProperties => ({
   background: active ? "var(--accent)" : "var(--panel)",
-  color: "var(--text)",
+  // The accent is a light cyan: light text on it was unreadable.
+  color: active ? "#0b0b0d" : "var(--text)",
   border: "1px solid var(--border)",
   padding: "6px 8px",
   cursor: "pointer",
@@ -29,7 +31,7 @@ const btn = (active: boolean): CSSProperties => ({
 
 const BOOL_OPS: BoolOp[] = ["Union", "Subtract", "Intersect", "Exclude"];
 
-export function ToolRail({ tool, selectionCount, onSelectTool, onAddRect, onAddEllipse, onAddText, onBoolean, onDelete, shapeTools }: Props) {
+export function ToolRail({ tool, selectionCount, onSelectTool, onAddText, onBoolean, onDelete, shapeTools }: Props) {
   const canBoolean = selectionCount >= 2;
   return (
     <div
@@ -47,13 +49,13 @@ export function ToolRail({ tool, selectionCount, onSelectTool, onAddRect, onAddE
         minHeight: 0,
       }}
     >
-      <button aria-label="Select" style={btn(tool === "select")} onClick={() => onSelectTool("select")}>
+      <button aria-label="Select" title="Select (V)" aria-pressed={tool === "select"} style={btn(tool === "select")} onClick={() => onSelectTool("select")}>
         Select
       </button>
-      <button aria-label="Rectangle" style={btn(false)} onClick={onAddRect}>
+      <button aria-label="Rectangle" title="Rectangle (R): drag on the canvas; Shift for a square" aria-pressed={tool === "rect"} style={btn(tool === "rect")} onClick={() => onSelectTool("rect")}>
         Rectangle
       </button>
-      <button aria-label="Ellipse" style={btn(false)} onClick={onAddEllipse}>
+      <button aria-label="Ellipse" title="Ellipse (E): drag on the canvas; Shift for a circle" aria-pressed={tool === "ellipse"} style={btn(tool === "ellipse")} onClick={() => onSelectTool("ellipse")}>
         Ellipse
       </button>
       <button aria-label="Text" style={btn(false)} onClick={onAddText}>

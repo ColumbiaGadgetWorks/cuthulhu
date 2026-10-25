@@ -354,6 +354,7 @@ export function SimpleDock(props: Props) {
             media={media}
             mediaDisabled={doc?.machine ? null : "Choose a machine first"}
             onMedia={pickMedia}
+            onMediaSize={(w, h) => props.onJobEdit(() => ipc.setMedia(w, h))}
             scene={props.scene}
             artboard={doc?.artboard ?? { x: 0, y: 0, w: 0, h: 0 }}
             // Shown when it is on even for a machine that cannot register: the refusal that follows

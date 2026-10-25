@@ -26,6 +26,9 @@ type Props = {
   media: string | null;
   mediaDisabled: string | null;
   onMedia: (id: string) => void;
+  /** Any size, in mm: a longer strip of roll than the presets, say. The backend clamps it to
+   *  what the machine reaches. */
+  onMediaSize: (w: number, h: number) => void;
   scene: Scene;
   artboard: { x: number; y: number; w: number; h: number };
   /** Print & cut, when the machine can find registration marks; null hides it. */
@@ -44,6 +47,31 @@ const control: CSSProperties = {
 const tiny: CSSProperties = {
   background: "var(--panel)", color: "var(--text)", border: "1px solid var(--border)", padding: "0 4px", fontSize: 11, cursor: "pointer",
 };
+
+/** One side of the media, sent when the field is left or Enter is pressed rather than per keystroke:
+ *  each send resizes the artboard and is an undo step. Keyed on the value, so a size the backend
+ *  clamped shows what it became. */
+function MediaSize({ label, value, disabled, onCommit }: { label: string; value: number; disabled: boolean; onCommit: (v: number) => void }) {
+  const shown = String(Math.round(value * 10) / 10);
+  const send = (raw: string) => {
+    const v = Number(raw);
+    if (Number.isFinite(v) && v > 0 && raw.trim() !== shown) onCommit(v);
+  };
+  return (
+    <input
+      key={shown}
+      aria-label={`Artboard ${label.toLowerCase()}`}
+      title={`Artboard ${label.toLowerCase()} in mm: any size, up to what the machine reaches`}
+      type="number"
+      min={1}
+      defaultValue={shown}
+      disabled={disabled}
+      style={{ ...control, width: 58 }}
+      onBlur={(e) => send(e.target.value)}
+      onKeyDown={(e) => { if (e.key === "Enter") send((e.target as HTMLInputElement).value); }}
+    />
+  );
+}
 
 /** A blank field is "use the preset's value", so it reads as null rather than zero. */
 function parseOverride(raw: string): number | null {
@@ -97,6 +125,10 @@ export function CutsPanel(p: Props) {
             {MEDIA.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
+        <MediaSize label="Width" value={p.artboard.w} disabled={p.mediaDisabled !== null} onCommit={(w) => p.onMediaSize(w, p.artboard.h)} />
+        <span style={{ color: "var(--muted)" }}>×</span>
+        <MediaSize label="Height" value={p.artboard.h} disabled={p.mediaDisabled !== null} onCommit={(h) => p.onMediaSize(p.artboard.w, h)} />
+        <span style={{ color: "var(--muted)" }}>mm</span>
         <label style={{ display: "flex", gap: 4, alignItems: "center" }} title="Heat-transfer vinyl is cut face down, so the design is cut mirrored">
           <input type="checkbox" aria-label="Mirror (HTV)" checked={p.mirror} onChange={(e) => p.onMirror(e.target.checked)} />
           Mirror (HTV)

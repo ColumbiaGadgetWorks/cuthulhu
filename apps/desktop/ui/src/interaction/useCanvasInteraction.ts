@@ -6,7 +6,7 @@ import type { Canvas2DRenderer } from "../render/Canvas2DRenderer";
 import { applyMoves, applyOptimistic, gestureScene, type Matrix, type PendingPreview } from "./transform";
 import {
   CSS_PX_PER_MM, IDENTITY_VIEW, ZOOM_STEP, fitView, minScaleFor, panBy, screenToWorld,
-  wheelFactor, zoomAt, type Size, type View,
+  isMouseWheel, wheelFactor, zoomAt, type Size, type View,
 } from "./viewport";
 import { handleAt, selectionBox, type Box, type HandleKind } from "./selectionBox";
 import { gestureMatrix, type Modifiers } from "./gesture";
@@ -36,7 +36,13 @@ type Gesture =
   // `targets` are gathered once at the press, since only the selection moves during a gesture;
   // `guides` are the snap lines of the current frame.
   | { t: "transform"; kind: HandleKind; box: Box; ids: number[]; shapes: number[]; start: Pt; m: Matrix; targets: Targets; guides: Guide[] } // world mm
-  | { t: "marquee"; start: Pt; cur: Pt; additive: boolean }; // world mm
+  | { t: "marquee"; start: Pt; cur: Pt; additive: boolean } // world mm
+  | { t: "draw"; kind: DrawKind; start: Pt; cur: Pt; square: boolean }; // world mm
+
+/** The tools that make a shape by dragging out its box on the canvas. */
+export type DrawKind = "rect" | "ellipse";
+/** What a click without a drag makes, so the tool still does something on a plain click. */
+const CLICK_SHAPE_MM = 20;
 
 export type CanvasInteractionArgs = {
   canvasRef: RefObject<HTMLCanvasElement>;
@@ -56,6 +62,10 @@ export type CanvasInteractionArgs = {
    *  out: an edit queued before a refusal must leave that refusal on screen, and one made after it
    *  must clear it, though both go out from the queue (Copilot on #301). */
   commit: (moves: Move[], requestedAt: number) => Promise<CommitOutcome>;
+  /** The draw tool armed, or null for selection. */
+  drawTool: DrawKind | null;
+  /** A box dragged out (or clicked) with a draw tool armed, in world mm. */
+  onDraw: (kind: DrawKind, box: Bounds) => void;
 };
 
 /** What a deferred edit reads when it is sent rather than when it was made: the tree that turns a
@@ -87,7 +97,12 @@ export type CanvasInteraction = {
   view: View;
   size: Size;
   cursor: Pt | null;
+  /** Fits the artboard (zoom to page). */
   requestFit: () => void;
+  /** Fits a box, in world mm: the selection, or every shape (zoom to fit). */
+  zoomTo: (b: Bounds) => void;
+  /** One step in or out about the canvas centre, or to 100%. */
+  zoomStep: (dir: "in" | "out" | "actual") => void;
   /** Draws the scene, selection and any live gesture. App calls it whenever the view, size, scene
    *  or selection changes, so those redraws cannot paint the committed scene over a gesture. */
   repaint: () => void;
@@ -131,6 +146,16 @@ function handleUnder(box: Box, p: Pt, scale: number): HandleKind | null {
   return handleAt(box, p, HANDLE_HIT_PX / scale, ROTATE_ZONE_PX / scale);
 }
 
+/** The box a draw gesture has dragged out; Shift makes it square, on the longer side. */
+function drawBox(g: { start: Pt; cur: Pt; square: boolean }): Bounds {
+  if (!g.square) return normalizeRect(g.start, g.cur);
+  const side = Math.max(Math.abs(g.cur.x - g.start.x), Math.abs(g.cur.y - g.start.y));
+  return normalizeRect(g.start, {
+    x: g.start.x + Math.sign(g.cur.x - g.start.x || 1) * side,
+    y: g.start.y + Math.sign(g.cur.y - g.start.y || 1) * side,
+  });
+}
+
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable);
 }
@@ -148,8 +173,9 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
   // Native listeners are registered once and pointer handlers run between renders; both read
   // these rather than a render's closure, so they see the selection the user just made.
   const viewRef = useRef(view);
-  const latest = useRef({ scene, selected, expand, commit, sceneRev, artboard });
-  latest.current = { scene, selected, expand, commit, sceneRev, artboard };
+  const { drawTool, onDraw } = args;
+  const latest = useRef({ scene, selected, expand, commit, sceneRev, artboard, drawTool, onDraw });
+  latest.current = { scene, selected, expand, commit, sceneRev, artboard, drawTool, onDraw };
   const pending = useRef<PendingPreview | null>(null);
   // `pending` is a ref so pointer handlers see it between renders, but `effectiveScene` is read by
   // React: the panel's buttons kept the bounds from before a preview until something else
@@ -209,11 +235,24 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
     () => (artboard && size.w > 0 && size.h > 0 ? minScaleFor(artboard, size) : 0),
     [artboard, size],
   );
+  // The floor never pulls a view below it back up: zoom to fit can land under it when the design
+  // runs far past the artboard, and the next notch in would otherwise jump.
   const zoomBy = useCallback(
-    (screen: Pt, factor: number) => setView(zoomAt(viewRef.current, screen, factor, minScale)),
+    (screen: Pt, factor: number) => setView(zoomAt(viewRef.current, screen, factor, Math.min(minScale, viewRef.current.scale))),
     [minScale, setView],
   );
   const centre = useCallback((): Pt => ({ x: size.w / 2, y: size.h / 2 }), [size]);
+  const zoomStep = useCallback(
+    (dir: "in" | "out" | "actual") =>
+      zoomBy(centre(), dir === "in" ? ZOOM_STEP : dir === "out" ? 1 / ZOOM_STEP : CSS_PX_PER_MM / viewRef.current.scale),
+    [centre, zoomBy],
+  );
+  const zoomTo = useCallback(
+    (b: Bounds) => {
+      if (size.w > 0 && size.h > 0) setView(fitView(b, size));
+    },
+    [size, setView],
+  );
 
   // The one place the renderer is told what to show. Pointer moves call it, and so does App's
   // effect on any view, size, scene or selection change: a separate redraw from the committed scene
@@ -233,8 +272,8 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       r.setScene(s);
       r.setSelection(shapes);
       r.setOverlay(
-        g?.t === "marquee"
-          ? { box: null, marquee: normalizeRect(g.start, g.cur), guides: [] }
+        g?.t === "marquee" || g?.t === "draw"
+          ? { box: null, marquee: g.t === "draw" ? drawBox(g) : normalizeRect(g.start, g.cur), guides: [] }
           : { box: selectionBox(s, shapes), marquee: null, guides: [] },
       );
     }
@@ -247,8 +286,8 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
     const screen = lastScreen.current;
     if (!g || g.t === "pan" || !screen) return;
     const p = screenToWorld(viewRef.current, screen);
-    if (g.t === "marquee") {
-      gesture.current = { ...g, cur: p };
+    if (g.t === "marquee" || g.t === "draw") {
+      gesture.current = { ...g, cur: p, ...(g.t === "draw" ? { square: lastMods.current.shift } : {}) };
       return;
     }
     // Snapping moves the pointer, not the matrix, so Shift, Alt and the commit see an ordinary
@@ -316,8 +355,11 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       setCursorScreen(screen);
       lastScreen.current = screen;
       // WebKit reports a trackpad pinch as a wheel with ctrlKey set, so one branch serves both.
-      if (e.ctrlKey || e.metaKey) zoomBy(screen, wheelFactor(e.deltaY * unit));
-      else setView(panBy(viewRef.current, -e.deltaX * unit, -e.deltaY * unit));
+      // Shift turns a wheel sideways, as it does in every scrolling view.
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey)) setView(panBy(viewRef.current, -(e.deltaX || e.deltaY) * unit, 0));
+      else if (e.ctrlKey || e.metaKey || isMouseWheel(e, WheelEvent.DOM_DELTA_LINE)) {
+        zoomBy(screen, wheelFactor(e.deltaMode === WheelEvent.DOM_DELTA_LINE ? Math.sign(e.deltaY) * 100 : e.deltaY));
+      } else setView(panBy(viewRef.current, -e.deltaX * unit, -e.deltaY * unit));
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
@@ -339,9 +381,9 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       }
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key === "0") requestFit();
-      else if (e.key === "1") zoomBy(centre(), CSS_PX_PER_MM / viewRef.current.scale);
-      else if (e.key === "=" || e.key === "+") zoomBy(centre(), ZOOM_STEP);
-      else if (e.key === "-") zoomBy(centre(), 1 / ZOOM_STEP);
+      else if (e.key === "1") zoomStep("actual");
+      else if (e.key === "=" || e.key === "+") zoomStep("in");
+      else if (e.key === "-") zoomStep("out");
       else return;
       // The webview has its own page zoom on these chords; the canvas zoom replaces it.
       e.preventDefault();
@@ -364,7 +406,7 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       window.removeEventListener("keyup", onUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [centre, requestFit, zoomBy]);
+  }, [requestFit, zoomStep]);
 
   // Every transform reaches the backend through here, so all producers share the one-in-flight
   // rule and the pending preview that stands in for an unread commit. An id listed twice moves by
@@ -520,6 +562,12 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       return;
     }
     if (e.button !== 0) return;
+    const tool = latest.current.drawTool;
+    if (tool !== null) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      gesture.current = { t: "draw", kind: tool, start: p, cur: p, square: e.shiftKey };
+      return;
+    }
     // Capture replaces SP3's window-level mouseup listener: a drag released outside the canvas
     // still ends here, so its preview is committed instead of stranded.
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -573,7 +621,7 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
       const kind = spaceHeld.current ? "pan" : box ? handleUnder(box, p, v.scale) : null;
       // ponytail: resize cursors are screen-aligned, so on a rotated box they point along the
       // screen rather than the edge. Upgrade: choose by the handle's on-screen angle.
-      canvas.style.cursor = kind ? CURSORS[kind] : "default";
+      canvas.style.cursor = kind === "pan" ? CURSORS.pan : latest.current.drawTool ? "crosshair" : kind ? CURSORS[kind] : "default";
       return;
     }
     if (g.t === "pan") {
@@ -589,6 +637,13 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
     const g = gesture.current;
     gesture.current = null;
     if (!g || g.t === "pan") return;
+    if (g.t === "draw") {
+      const travel = Math.hypot(g.cur.x - g.start.x, g.cur.y - g.start.y) * viewRef.current.scale;
+      const box = travel < CLICK_SLOP_PX ? { x: g.start.x, y: g.start.y, w: CLICK_SHAPE_MM, h: CLICK_SHAPE_MM } : drawBox(g);
+      repaint();
+      if (box.w > 0 && box.h > 0) latest.current.onDraw(g.kind, box);
+      return;
+    }
     if (g.t === "marquee") {
       const travel = Math.hypot(g.cur.x - g.start.x, g.cur.y - g.start.y) * viewRef.current.scale;
       const { scene: s, selected: sel } = current();
@@ -630,6 +685,8 @@ export function useCanvasInteraction(args: CanvasInteractionArgs): CanvasInterac
     size,
     cursor: cursorScreen ? screenToWorld(view, cursorScreen) : null,
     requestFit,
+    zoomTo,
+    zoomStep,
     repaint,
     editsLock: editsLockNow(),
     editsLockNow,

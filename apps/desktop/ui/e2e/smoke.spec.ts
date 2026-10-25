@@ -230,7 +230,8 @@ function installMockTauri(opts?: { seedTwoColorRects?: boolean; failImagePreview
       // Same test-only override as `a.stroke`: no UI control sets cuttability at creation, so
       // this is the only way to seed a NoCut shape without going through set_cut_line_type.
       const cutLineType = a.cut_line_type !== undefined ? (a.cut_line_type as "Cut" | "NoCut") : "Cut";
-      doc.nodes[id] = { id, kind: { Shape: a.kind }, transform: [1, 0, 0, 1, 0, 0], style, children: [], cut_line_type: cutLineType, material_preset: { state: "inherit" } };
+      const at = (a.at as [number, number] | undefined) ?? [0, 0];
+      doc.nodes[id] = { id, kind: { Shape: a.kind }, transform: [1, 0, 0, 1, at[0], at[1]], style, children: [], cut_line_type: cutLineType, material_preset: { state: "inherit" } };
       doc.nodes[a.parent as number].children.push(id);
       return {};
     },
@@ -560,7 +561,8 @@ function installMockTauri(opts?: { seedTwoColorRects?: boolean; failImagePreview
       const m = machines.find((p) => p.id === a.machineId);
       if (!m) throw new Error("unknown machine");
       doc.machine = m;
-      doc.artboard = { x: 0, y: 0, w: m.width_mm, h: m.height_mm };
+      // `document::machine::default_artboard`: a 12×12 in mat, clamped to the machine's reach.
+      doc.artboard = { x: 0, y: 0, w: Math.min(m.width_mm, 304.8), h: Math.min(m.height_mm, 304.8) };
       return null;
     },
     list_machines: () => machines,
@@ -3533,15 +3535,19 @@ async function toPage(page: Page, v: CanvasView, mm: { x: number; y: number }) {
 
 /** Ctrl-wheel at (the whole pixel nearest) a document point; returns the view once the zoom has
  *  landed. Whole pixels because Chromium reports a wheel's position as integers: a fractional
- *  target puts the pinned point up to a pixel away, and a 20× zoom turns that into twenty. */
+ *  target puts the pinned point up to a pixel away, and a 20× zoom turns that into twenty.
+ *  `deltaY` is the pinch delta whose exponential zoom is wanted (−350 is about 33×), sent as the
+ *  mouse notches that come closest to it, since one notch is one 1.25× step. */
 async function zoomInAt(page: Page, mm: { x: number; y: number }, deltaY: number): Promise<CanvasView> {
   const before = await fittedView(page);
   const at = await toPage(page, before, mm);
   await page.mouse.move(Math.round(at.x), Math.round(at.y));
+  const notches = Math.round((-deltaY * 0.01) / Math.log(1.25));
   await page.keyboard.down("Control");
-  await page.mouse.wheel(0, deltaY);
+  for (let i = 0; i < notches; i++) await page.mouse.wheel(0, -100);
   await page.keyboard.up("Control");
-  await expect.poll(async () => (await readView(page)).scale).toBeGreaterThan(before.scale);
+  const want = before.scale * 1.25 ** notches;
+  await expect.poll(async () => (await readView(page)).scale).toBeCloseTo(want, 6);
   return readView(page);
 }
 
@@ -3618,11 +3624,12 @@ test("the cursor readout follows a wheel pan under a still pointer", async ({ pa
   const readY = async () => Number(/y (-?[\d.]+) mm/.exec((await page.getByTestId("status-cursor").textContent()) ?? "")?.[1]);
   const before = await readY();
 
-  await page.mouse.wheel(0, 100); // scroll down: the view pans up, the pointer is over a lower point
+  // A trackpad's small delta pans; a mouse notch would zoom.
+  await page.mouse.wheel(0, 40); // scroll down: the view pans up, the pointer is over a lower point
   await expect.poll(async () => (await readView(page)).ty).toBeLessThan(v0.ty);
 
   // A readout stored at the last pointer move would still say `before`; the world moved under it.
-  await expect.poll(readY).toBeCloseTo(before + 100 / v0.scale, 0);
+  await expect.poll(readY).toBeCloseTo(before + 40 / v0.scale, 0);
 });
 
 // One transform on the wire at a time. A second gesture pressed while the first commit is
@@ -3730,15 +3737,15 @@ test("an edit keeps the operator's zoom; Ctrl+0 and a machine switch refit", asy
 
   await page.getByLabel("Machine").selectOption("puma");
   const box = (await page.getByTestId("design-canvas").boundingBox())!;
-  // The Puma's 600 × 5000 mm bed, height-bound in this window like the Cameo's.
-  await expect.poll(async () => (await readView(page)).scale).toBeCloseTo((box.height - 48) / 5000, 3);
+  // A machine starts on a 12×12 in mat, fitted whichever side binds.
+  await expect.poll(async () => (await readView(page)).scale).toBeCloseTo(Math.min(box.width - 48, box.height - 48) / 304.8, 3);
 });
 
 test("keyboard zoom works after a toolbar click and leaves a focused field alone", async ({ page }) => {
   await page.addInitScript(installMockTauri, { seedTwoColorRects: true });
   await page.goto("/");
   const fitted = await fittedView(page);
-  await page.getByRole("button", { name: "Select" }).click(); // focus stays on the button
+  await page.getByRole("button", { name: "Select", exact: true }).click(); // focus stays on the button
 
   await page.keyboard.press("Control+=");
   await expect.poll(async () => (await readView(page)).scale).toBeCloseTo(fitted.scale * 1.25, 6);
@@ -3774,10 +3781,12 @@ test("Space-drag pans after a toolbar click without pressing the button, and so 
   await page.addInitScript(installMockTauri, { seedTwoColorRects: true });
   await page.goto("/");
   const v0 = await fittedView(page);
-  await page.getByRole("button", { name: "Rectangle" }).click(); // adds one; focus stays on it
+  await page.getByRole("button", { name: "Rectangle" }).click(); // arms the tool; focus stays on it
+  const box = (await page.getByTestId("design-canvas").boundingBox())!;
+  await page.mouse.click(box.x + 10, box.y + 10); // places one and returns to Select
   const rows = page.getByTestId("layer-row");
   await expect(rows).toHaveCount(3);
-  const box = (await page.getByTestId("design-canvas").boundingBox())!;
+  await page.getByRole("button", { name: "Rectangle" }).focus(); // Space must not press it below
   const start = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
 
   await page.mouse.move(start.x, start.y);
@@ -3786,7 +3795,7 @@ test("Space-drag pans after a toolbar click without pressing the button, and so 
   await page.keyboard.up("Space");
   await expect.poll(async () => (await readView(page)).tx).toBeCloseTo(v0.tx + 50, 0);
   expect((await readView(page)).ty).toBeCloseTo(v0.ty + 30, 0);
-  await expect(rows).toHaveCount(3); // Space never reached the Rectangle button
+  await expect(page.getByRole("button", { name: "Rectangle" })).toHaveAttribute("aria-pressed", "false"); // Space never reached it
   expect(await commitLog(page)).toEqual([]);
 
   await page.mouse.move(start.x, start.y);
@@ -3849,14 +3858,14 @@ test("a wheel pan during a drag carries the shape with the pointer and commits t
   await page.mouse.move(centre.x, centre.y);
   await page.mouse.down();
   await page.mouse.move(centre.x + 5 * v.scale, centre.y, { steps: 3 });
-  await page.mouse.wheel(0, 100); // the view pans up 100 px; the pointer now sits 100 px lower in mm
+  await page.mouse.wheel(0, 40); // a trackpad pan: the view moves up 40 px, the pointer 40 px lower in mm
   await expect.poll(async () => (await readView(page)).ty).toBeLessThan(v.ty);
   await page.mouse.up();
 
   await expect.poll(async () => (await commitLog(page)).length).toBe(1);
   const [, , , , e, f] = (await commitLog(page))[0].m;
   expect(e).toBeCloseTo(5, 0);
-  expect(f).toBeCloseTo(100 / v.scale, 0);
+  expect(f).toBeCloseTo(40 / v.scale, 0);
 });
 
 test("a Group selected in the layers panel gets a box around its shapes and commits as itself", async ({ page }) => {
