@@ -26,6 +26,11 @@ jobs:
           - arch: arm64
             target: aarch64-unknown-linux-gnu
             cross: true
+          # 32-bit Raspberry Pi OS: a Pi 2, or any Pi flashed with the 32-bit image. Not the
+          # original Zero W or Pi 1, which are ARMv6.
+          - arch: armhf
+            target: armv7-unknown-linux-gnueabihf
+            cross: true
           # Any other 64-bit Linux box next to a cutter.
           - arch: amd64
             target: x86_64-unknown-linux-gnu
@@ -60,6 +65,9 @@ jobs:
           cp -r apps/desktop/ui/dist "$dir/ui"
           cp apps/web/pi/install.sh apps/web/pi/cuthulhu-web.service apps/web/pi/60-cuthulhu-web.rules "$dir/"
           cp docs/web-ui.md "$dir/README.md"
+          # What install.sh compares with `dpkg --print-architecture`: `uname -m` reads aarch64 on a
+          # 32-bit Raspberry Pi OS running its default 64-bit kernel, where an arm64 build cannot run.
+          echo "${{ matrix.arch }}" > "$dir/ARCH"
           tar czf cuthulhu-web-linux-${{ matrix.arch }}.tar.gz "$dir"
       - uses: actions/upload-artifact@v4
         with:
@@ -94,12 +102,16 @@ jobs:
             | Computer | File |
             | --- | --- |
             | Raspberry Pi (64-bit Raspberry Pi OS) | `cuthulhu-web-linux-arm64.tar.gz` |
+            | Raspberry Pi (32-bit Raspberry Pi OS, or a Pi 2) | `cuthulhu-web-linux-armhf.tar.gz` |
             | Other 64-bit Linux | `cuthulhu-web-linux-amd64.tar.gz` |
+
+            Not sure which Pi file? Run `dpkg --print-architecture` on the Pi: `arm64` or `armhf`. The
+            installer checks too, and says which one to get if it is the wrong one.
 
             **Install on the Pi:**
 
             ```sh
-            tar xzf cuthulhu-web-linux-arm64.tar.gz
+            tar xzf cuthulhu-web-linux-<arch>.tar.gz
             sudo ./cuthulhu-web/install.sh
             ```
 
