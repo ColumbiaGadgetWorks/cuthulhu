@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction 
 import { download, isWeb, listen } from "./transport";
 import { PiFilesDialog } from "./web/PiFilesDialog";
 import { ServerDialog } from "./web/ServerDialog";
+import { checkForUpdate } from "./web/server";
 import * as ipc from "./ipc";
 import { Canvas2DRenderer } from "./render/Canvas2DRenderer";
 import { unionBounds, type Affine6, type Bounds, type Scene, type ShapeGeom } from "./render/hittest";
@@ -199,6 +200,12 @@ export function App() {
   const [printCutOpen, setPrintCutOpen] = useState(false);
   const [piFilesOpen, setPiFilesOpen] = useState(false);
   const [serverOpen, setServerOpen] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  // Asked once per page load, quietly: a Pi with no internet just never shows the badge.
+  useEffect(() => {
+    if (!isWeb()) return;
+    checkForUpdate().then((c) => setUpdateAvailable(c.updateAvailable), () => {});
+  }, []);
   const [tracePath, setTracePath] = useState<string | null>(null);
   const [status, setStatus] = useState<ipc.CutStatus>(ipc.DISCONNECTED_STATUS);
   /** The machine's material presets, for the properties panel's control. Loaded here rather
@@ -854,6 +861,7 @@ export function App() {
               download(name);
             }) : undefined}
           onServer={isWeb() ? () => setServerOpen(true) : undefined}
+          updateAvailable={updateAvailable}
           onReload={() =>
             run(async () => {
               await loadDocument(lastPath!);

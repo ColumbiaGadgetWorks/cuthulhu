@@ -13,19 +13,18 @@ mod update;
 use std::path::PathBuf;
 
 const USAGE: &str = "\
-usage: cuthulhu-web [--bind ADDR:PORT] [--ui DIR] [--data DIR] [--token-file FILE]
+usage: cuthulhu-web [--bind ADDR:PORT] [--ui DIR] [--data DIR]
 
   --bind        address to listen on (default 0.0.0.0:8080)
   --ui          the built UI to serve (default: ./ui beside the binary)
   --data        where uploaded and saved files live (default /var/lib/cuthulhu-web)
-  --token-file  file holding the access token; without one, anyone who can reach the port
-                can use the cutter";
+
+Anyone who can reach the port can use the cutter: keep it on a network you trust.";
 
 pub struct Config {
     pub bind: String,
     pub ui: PathBuf,
     pub data: PathBuf,
-    pub token: Option<String>,
 }
 
 fn parse_args() -> Result<Config, String> {
@@ -34,7 +33,6 @@ fn parse_args() -> Result<Config, String> {
         bind: "0.0.0.0:8080".into(),
         ui: exe_dir.map(|d| d.join("ui")).unwrap_or_else(|| PathBuf::from("ui")),
         data: PathBuf::from("/var/lib/cuthulhu-web"),
-        token: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -43,14 +41,10 @@ fn parse_args() -> Result<Config, String> {
             "--bind" => cfg.bind = value()?,
             "--ui" => cfg.ui = PathBuf::from(value()?),
             "--data" => cfg.data = PathBuf::from(value()?),
+            // Sign-in is gone. A unit file from an older install still passes this, and refusing it
+            // would leave the server down until someone reinstalls over SSH.
             "--token-file" => {
-                let path = value()?;
-                let token = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
-                let token = token.trim().to_string();
-                if token.is_empty() {
-                    return Err(format!("{path} is empty"));
-                }
-                cfg.token = Some(token);
+                value()?;
             }
             "-h" | "--help" => return Err(USAGE.into()),
             other => return Err(format!("unknown argument {other}\n\n{USAGE}")),

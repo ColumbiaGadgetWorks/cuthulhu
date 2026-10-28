@@ -216,10 +216,6 @@ pub fn dispatch(ctx: &Ctx, cmd: &str, a: &Value) -> Reply {
             let tag: String = arg(a, "tag")?;
             ctx.updates.apply(&tag)
         }
-        "web_update_set_repo" => {
-            let repo: String = arg(a, "repo")?;
-            ctx.updates.set_repo(&repo)
-        }
         _ => Err(Value::String(format!("unknown command {cmd}"))),
     }
 }
@@ -253,7 +249,7 @@ mod tests {
 
     fn ctx(dir: &std::path::Path) -> Ctx {
         let (dev, _events) = DeviceManagerHandle::new(std::sync::Arc::new(driver_registry::HardwareBackendFactory));
-        Ctx { state: Mutex::new(AppState::new()), dev, files: dir.to_path_buf(), updates: crate::update::Updates::new(dir, &dir.join("status.json"), false) }
+        Ctx { state: Mutex::new(AppState::new()), dev, files: dir.to_path_buf(), updates: crate::update::Updates::new(dir, &dir.join("status.json")) }
     }
 
     #[test]

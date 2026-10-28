@@ -8,7 +8,6 @@
 //! - `GET /files`: what the files directory holds (name, size, when it was saved), newest first, for
 //!   opening a project kept on the server.
 //! - `GET /files/<file>`: a saved file, as a download, for Save and the exports.
-//! - `GET /?token=<token>`: sets the access cookie and redirects to `/`.
 //! - Anything else: the UI's static files, with `index.html` for a path that is not one.
 
 use std::io::Read;
@@ -23,7 +22,6 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use crate::api::{dispatch, Ctx};
 use crate::Config;
 
-const COOKIE: &str = "cuthulhu_token";
 /// An SVG or project of a few MB is large; an image for tracing can be tens.
 const MAX_UPLOAD: usize = 64 * 1024 * 1024;
 /// Enough for `import_svg`, whose bytes travel as a JSON array of numbers (about four characters
@@ -39,7 +37,7 @@ pub fn run(cfg: Config) -> Result<(), String> {
 
     let (dev, events) = DeviceManagerHandle::new(Arc::new(HardwareBackendFactory));
     let dev = dev.with_usage_log(desktop::usage::default_usage_path());
-    let updates = crate::update::Updates::new(&cfg.data, Path::new(crate::update::STATUS_FILE), cfg.token.is_some());
+    let updates = crate::update::Updates::new(&cfg.data, Path::new(crate::update::STATUS_FILE));
     let ctx = Arc::new(Ctx { state: std::sync::Mutex::new(AppState::new()), dev, files, updates });
 
     // The desktop's event bridge forwards these to the webview. A browser polls
@@ -52,18 +50,14 @@ pub fn run(cfg: Config) -> Result<(), String> {
     });
 
     let server = Server::http(&cfg.bind).map_err(|e| format!("cannot listen on {}: {e}", cfg.bind))?;
-    eprintln!(
-        "cuthulhu-web: serving on http://{}{}",
-        cfg.bind,
-        if cfg.token.is_some() { " (open it once as /?token=<your token>)" } else { " with no token: anyone who can reach it can cut" }
-    );
-    let shared = Arc::new((cfg.ui, cfg.token));
+    eprintln!("cuthulhu-web: serving on http://{}", cfg.bind);
+    let ui = Arc::new(cfg.ui);
     for request in server.incoming_requests() {
         let ctx = ctx.clone();
-        let shared = shared.clone();
+        let ui = ui.clone();
         // A request per thread: `cut` blocks while the worker sends, and a browser polling the
         // device state meanwhile must still be answered.
-        std::thread::spawn(move || handle(&ctx, &shared.0, shared.1.as_deref(), request));
+        std::thread::spawn(move || handle(&ctx, &ui, request));
     }
     Ok(())
 }
@@ -82,22 +76,8 @@ fn text(status: u16, body: &str) -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_string(body).with_status_code(StatusCode(status))
 }
 
-/// Compared in time independent of where the strings differ, so the token cannot be found a
-/// character at a time.
-fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
 fn query_param<'a>(url: &'a str, key: &str) -> Option<&'a str> {
     url.split_once('?')?.1.split('&').find_map(|kv| kv.strip_prefix(key)?.strip_prefix('='))
-}
-
-fn cookie<'a>(req: &'a Request, name: &str) -> Option<&'a str> {
-    req.headers()
-        .iter()
-        .filter(|h| h.field.equiv("Cookie"))
-        .flat_map(|h| h.value.as_str().split(';'))
-        .find_map(|kv| kv.trim().strip_prefix(name)?.strip_prefix('='))
 }
 
 /// `%XX` and `+` decoded, for file names in a URL. Invalid escapes are kept as typed; the file
@@ -128,30 +108,9 @@ fn read_body(req: &mut Request, limit: usize) -> Result<Vec<u8>, String> {
     if body.len() > limit { Err(format!("body larger than {limit} bytes")) } else { Ok(body) }
 }
 
-fn handle(ctx: &Ctx, ui: &Path, token: Option<&str>, mut req: Request) {
+fn handle(ctx: &Ctx, ui: &Path, mut req: Request) {
     let url = req.url().to_string();
     let path = url.split('?').next().unwrap_or("/").to_string();
-
-    if let Some(token) = token {
-        if let Some(given) = query_param(&url, "token") {
-            let reply = if same(&decode(given), token) {
-                // SameSite=Strict: another site's page cannot make the browser send it, so a link
-                // elsewhere cannot start a cut.
-                Response::from_string("")
-                    .with_status_code(StatusCode(303))
-                    .with_header(header("Location", "/"))
-                    .with_header(header("Set-Cookie", &format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000")))
-            } else {
-                text(403, "wrong token")
-            };
-            let _ = req.respond(reply);
-            return;
-        }
-        if !cookie(&req, COOKIE).is_some_and(|c| same(c, token)) {
-            let _ = req.respond(text(401, "Open this page once as /?token=<your token> to sign in."));
-            return;
-        }
-    }
 
     let reply = match (req.method(), path.as_str()) {
         (Method::Post, p) if p.starts_with("/api/") => {
@@ -269,12 +228,5 @@ mod tests {
     fn the_served_page_is_marked_before_its_scripts() {
         let page = String::from_utf8(mark_web(b"<html><head><script src=a.js></script></head></html>")).unwrap();
         assert!(page.find("__CUTHULHU_WEB__").unwrap() < page.find("a.js").unwrap());
-    }
-
-    #[test]
-    fn the_token_compare_needs_the_whole_token() {
-        assert!(same("abc", "abc"));
-        assert!(!same("abc", "abd"));
-        assert!(!same("ab", "abc"));
     }
 }

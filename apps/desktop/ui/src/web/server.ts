@@ -16,10 +16,9 @@ export async function listServerFiles(): Promise<ServerFile[]> {
 export type UpdateStatus = {
   current: string;
   arch: string;
+  /** Where releases come from. Fixed from the page: an update installs as root, so where it comes
+   *  from is not something anyone on the network may choose (`apps/web/src/update.rs`). */
   repo: string;
-  /** False while the server runs without sign-in: an update installs as root, so where it comes
-   *  from is not something anyone on the network may choose. */
-  canChangeRepo: boolean;
   /** An update was asked for and the installer has not picked it up yet. */
   pending: boolean;
   last: { state: "running" | "done" | "failed"; message: string; at: number } | null;
@@ -30,4 +29,3 @@ export type UpdateCheck = { status: UpdateStatus; latest: string | null; url: st
 export const updateStatus = () => invoke<UpdateStatus>("web_update_status");
 export const checkForUpdate = () => invoke<UpdateCheck>("web_update_check");
 export const applyUpdate = (tag: string) => invoke<UpdateStatus>("web_update_apply", { tag });
-export const setUpdateRepo = (repo: string) => invoke<UpdateStatus>("web_update_set_repo", { repo });

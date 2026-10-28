@@ -9,7 +9,7 @@ User=cuthulhu
 Group=cuthulhu
 # Presets and the usage log live under the account's config directory; it has no home of its own.
 Environment=HOME=/var/lib/cuthulhu-web
-ExecStart=/usr/local/bin/cuthulhu-web --bind 0.0.0.0:8080 --ui /usr/local/share/cuthulhu-web/ui --data /var/lib/cuthulhu-web --token-file /etc/cuthulhu-web/token
+ExecStart=/usr/local/bin/cuthulhu-web --bind 0.0.0.0:8080 --ui /usr/local/share/cuthulhu-web/ui --data /var/lib/cuthulhu-web
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes

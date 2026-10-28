@@ -38,17 +38,21 @@ The installer:
   the Cameos' USB devices;
 - installs the server to `/usr/local/bin/cuthulhu-web` and the page to
   `/usr/local/share/cuthulhu-web/ui`;
-- generates an access token in `/etc/cuthulhu-web/token` (kept on reinstall);
 - starts the `cuthulhu-web` service on port 8080 and enables it at boot.
 
-It ends by printing the address with the token, like
-`http://192.168.1.50:8080/?token=…`. Open that once in each browser: it signs that browser in for a
-year. After that, `http://192.168.1.50:8080/` is enough, so bookmark it.
+It ends by printing the address, like `http://192.168.1.50:8080/`. Open it in any browser on the
+network and bookmark it; there is no sign-in.
 
 If the cutter was already plugged in, unplug and replug it once so the new udev rule applies.
 
-To upgrade, unpack the newer release and run its `install.sh` again. To see the server's log:
-`journalctl -u cuthulhu-web -f`.
+To upgrade, use **Updates…** in the page (below), or over SSH:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/adman234/cuthulhu/main/apps/web/pi/get.sh | sudo sh
+```
+
+That downloads the newest `web-v…` release for this Pi and runs its `install.sh`; saved projects
+are kept. To see the server's log: `journalctl -u cuthulhu-web -f`.
 
 ## Using it
 
@@ -70,18 +74,19 @@ is.
 
 ## Updates
 
-**Pi…** in the top bar shows the version running and checks the repository's releases for a newer
-`web-v…` one with a package for this Pi. **Update to …** installs it: the server restarts, and the
-page says when the new version is up.
+**Updates…** in the top bar shows the version running and checks GitHub for a newer `web-v…`
+release with a package for this Pi. The page also checks once when it loads, and the button turns
+into **Update available…** when there is one. **Update to …** installs it: the server restarts, and
+the page says when the new version is up. The Pi needs internet access for this.
 
 The server itself runs as an unprivileged account and cannot install anything. It writes a request,
 and a root systemd unit (`cuthulhu-web-update.path`) downloads that release from GitHub and runs its
 `install.sh`. Its progress is in `/var/lib/cuthulhu-web-update/status.json`, and its log in
 `journalctl -u cuthulhu-web-update`.
 
-Updates come from `adman234/cuthulhu` unless changed in the same dialog. The repository can only be
-changed from the page while sign-in is on, because an update runs as root: whoever chooses where it
-comes from can run anything on the Pi. With sign-in off, change it over SSH:
+Updates come from `adman234/cuthulhu`. The page cannot change that: an update runs as root, and
+the page has no sign-in, so whoever could choose where it comes from could run anything on the Pi.
+To take updates from another repository, change it over SSH:
 
 ```sh
 echo '{"repo":"OWNER/NAME"}' | sudo -u cuthulhu tee /var/lib/cuthulhu-web/update-settings.json
@@ -89,22 +94,10 @@ echo '{"repo":"OWNER/NAME"}' | sudo -u cuthulhu tee /var/lib/cuthulhu-web/update
 
 ## Security
 
-Anyone who can reach port 8080 and has the token can cut. The token is a long random string, and
-the browser keeps it in a cookie that other websites cannot make it send. The connection is plain
-HTTP, so keep the Pi on a network you trust (your home or makerspace LAN), and do not forward the
+There is no sign-in: anyone who can reach port 8080 can use the cutter and install the newest
+release. Keep the Pi on a network you trust (your home or makerspace LAN), and do not forward the
 port to the internet.
 
-To change the token, put a new one in `/etc/cuthulhu-web/token` and
-`sudo systemctl restart cuthulhu-web`; every browser then signs in again with the new link.
-
-To turn sign-in off, so the page opens without the token link:
-
-```sh
-sudo ./cuthulhu-web/install.sh --no-token
-```
-
-Anyone who can reach the Pi can then use the cutter. `--token` turns sign-in back on with the same
-token. The choice is kept across upgrades, including those started from the page.
 
 ## The same Pi as a Cut Host
 
@@ -125,5 +118,5 @@ needed. The page it serves is `apps/desktop/ui/dist`, committed in the repositor
 Run it by hand with:
 
 ```sh
-cuthulhu-web --bind 0.0.0.0:8080 --ui apps/desktop/ui/dist --data ./web-data --token-file ./token
+cuthulhu-web --bind 0.0.0.0:8080 --ui apps/desktop/ui/dist --data ./web-data
 ```

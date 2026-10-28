@@ -14,6 +14,8 @@ type Props = {
   onDownload?: () => void;
   /** Opens the Pi server's version and update dialog (web only). */
   onServer?: () => void;
+  /** A newer server release is out, so the server button says so. */
+  updateAvailable?: boolean;
   onOpen: () => void;
   onReload: () => void;
   canReload: boolean;
@@ -47,6 +49,7 @@ export function TopBar({
   onSave,
   onDownload,
   onServer,
+  updateAvailable,
   onOpen,
   onReload,
   canReload,
@@ -150,8 +153,13 @@ export function TopBar({
         </button>
       ) : null}
       {onServer ? (
-        <button aria-label="Pi server" title="Version and updates" style={btn} onClick={onServer}>
-          Pi…
+        <button
+          aria-label="Pi server"
+          title="Version and updates"
+          style={updateAvailable ? { ...btn, background: "var(--accent)", color: "#0b0b0d" } : btn}
+          onClick={onServer}
+        >
+          {updateAvailable ? "Update available…" : "Updates…"}
         </button>
       ) : null}
       {layout && onToggleLayout ? (

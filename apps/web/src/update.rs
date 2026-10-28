@@ -5,9 +5,12 @@
 //! `install.sh`. What crosses that line is two strings, a repository and a tag, which the script
 //! checks again against the same shapes as here before using either.
 //!
-//! The repository updates come from can be changed from the page only while the server requires a
-//! token: an update runs as root, so whoever can choose where it comes from can run anything on
-//! the machine.
+//! The repository updates come from cannot be changed from the page. The page has no sign-in, and an
+//! update runs as root, so whoever could choose where it comes from could run anything on the
+//! machine. It is changed over SSH, in `update-settings.json`.
+//!
+//! What the page can do is install the newest release of that one repository — the same thing an
+//! SSH user would do, with nothing for a visitor to choose but when.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,8 +37,6 @@ pub const STATUS_FILE: &str = "/var/lib/cuthulhu-web-update/status.json";
 pub struct Updates {
     data: PathBuf,
     status_file: PathBuf,
-    /// Whether the server requires a token, which is what allows changing the repository.
-    pub token_required: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -77,8 +78,8 @@ pub fn newest_release(releases: &Value, arch: &str) -> Option<(String, String)> 
 }
 
 impl Updates {
-    pub fn new(data: &Path, status_file: &Path, token_required: bool) -> Self {
-        Updates { data: data.to_path_buf(), status_file: status_file.to_path_buf(), token_required }
+    pub fn new(data: &Path, status_file: &Path) -> Self {
+        Updates { data: data.to_path_buf(), status_file: status_file.to_path_buf() }
     }
 
     fn settings_path(&self) -> PathBuf {
@@ -94,23 +95,6 @@ impl Updates {
             .unwrap_or_else(|| DEFAULT_REPO.to_string())
     }
 
-    pub fn set_repo(&self, repo: &str) -> Result<Value, Value> {
-        if !self.token_required {
-            return Err(Value::String(
-                "The update source can only be changed from the page while sign-in is on. Over SSH: \
-                 echo '{\"repo\":\"OWNER/NAME\"}' | sudo -u cuthulhu tee /var/lib/cuthulhu-web/update-settings.json"
-                    .into(),
-            ));
-        }
-        let repo = repo.trim();
-        if !valid_repo(repo) {
-            return Err(Value::String(format!("{repo:?} is not a GitHub repository (owner/name)")));
-        }
-        let body = serde_json::to_vec(&Settings { repo: Some(repo.to_string()) }).map_err(|e| Value::String(e.to_string()))?;
-        std::fs::write(self.settings_path(), body).map_err(|e| Value::String(e.to_string()))?;
-        Ok(self.status())
-    }
-
     /// What the page shows: this build, where updates come from, and how the last one went.
     pub fn status(&self) -> Value {
         let last = std::fs::read(&self.status_file)
@@ -121,7 +105,6 @@ impl Updates {
             "current": VERSION,
             "arch": ARCH,
             "repo": self.repo(),
-            "canChangeRepo": self.token_required,
             "pending": self.data.join("update-request").exists(),
             "last": last,
         })
@@ -199,21 +182,20 @@ mod tests {
     }
 
     #[test]
-    fn the_repository_changes_only_while_a_token_is_required() {
+    fn the_repository_is_read_from_the_settings_file_and_a_bad_one_is_ignored() {
         let dir = tempfile::tempdir().unwrap();
-        let open = Updates::new(dir.path(), &dir.path().join("status.json"), false);
-        assert!(open.set_repo("someone/else").is_err());
-        assert_eq!(open.repo(), DEFAULT_REPO);
-        let signed = Updates::new(dir.path(), &dir.path().join("status.json"), true);
-        assert!(signed.set_repo("bad repo").is_err());
-        signed.set_repo("someone/else").unwrap();
-        assert_eq!(signed.repo(), "someone/else");
+        let u = Updates::new(dir.path(), &dir.path().join("status.json"));
+        assert_eq!(u.repo(), DEFAULT_REPO);
+        std::fs::write(dir.path().join("update-settings.json"), r#"{"repo":"someone/else"}"#).unwrap();
+        assert_eq!(u.repo(), "someone/else");
+        std::fs::write(dir.path().join("update-settings.json"), r#"{"repo":"a/b;reboot"}"#).unwrap();
+        assert_eq!(u.repo(), DEFAULT_REPO);
     }
 
     #[test]
     fn applying_writes_the_request_the_root_updater_reads() {
         let dir = tempfile::tempdir().unwrap();
-        let u = Updates::new(dir.path(), &dir.path().join("status.json"), true);
+        let u = Updates::new(dir.path(), &dir.path().join("status.json"));
         assert!(u.apply("web-v1.2.3; reboot").is_err());
         assert!(!dir.path().join("update-request").exists());
         u.apply("web-v1.2.3").unwrap();
