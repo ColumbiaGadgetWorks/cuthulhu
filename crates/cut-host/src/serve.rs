@@ -4,9 +4,8 @@
 //!
 //! `handle_request` is deliberately separate from the socket: it is the whole of
 //! what a request means, and it is what the tests drive. `serve` adds a listener,
-//! a certificate and a token to it and nothing else.
+//! and a certificate to it and nothing else.
 
-use std::collections::BTreeMap;
 use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
@@ -65,34 +64,14 @@ fn enable_keepalive(stream: &TcpStream, peer: &str) {
 /// anything beyond this is a bug or an attempt to exhaust it.
 pub const MAX_CLIENTS: usize = 8;
 
-/// How long an unauthenticated peer has to present its token, from the connection being accepted.
+/// How long a new peer has to send its greeting, from the connection being accepted.
 ///
-/// Short on purpose, and much shorter than `DEFAULT_BODY_TIMEOUT`: a peer that has proved nothing
-/// has earned less patience than a paired desktop mid-dispatch, and until it has, it is holding
-/// one of `MAX_CLIENTS` slots. Spent at most twice — once waiting for the frame to begin, once for
-/// the rest of it — so the worst an unauthenticated peer can squat is roughly `2x` this (#118).
-const PRE_AUTH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Short on purpose, and much shorter than `DEFAULT_BODY_TIMEOUT`: a peer that has said nothing
+/// has earned less patience than a desktop mid-dispatch, and until it speaks it is holding one of
+/// `MAX_CLIENTS` slots. Spent at most twice — once waiting for the frame to begin, once for the
+/// rest of it — so the worst a silent peer can squat is roughly `2x` this (#118).
+const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The name of the token that matched, or `None`. Every candidate is compared in full, so the
-/// time taken says nothing about how much of a token was right — and comparing all of them,
-/// rather than stopping at the first match, keeps that true as clients are added.
-pub fn match_token(presented: &str, tokens: &BTreeMap<String, String>) -> Option<String> {
-    let mut matched: Option<String> = None;
-    for (name, value) in tokens {
-        if constant_time_eq(presented, value) {
-            matched = Some(name.clone());
-        }
-    }
-    matched
-}
-
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
 
 /// What a request means, with no socket involved.
 pub fn handle_request(host: &Arc<Host>, request: Request) -> Response {
@@ -190,7 +169,6 @@ pub fn serve_on(listener: TcpListener, host: Arc<Host>, config: Config) -> io::R
     );
 
     let clients = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let tokens = Arc::new(config.tokens);
     let max_frame = config.max_frame;
 
     for stream in listener.incoming() {
@@ -202,9 +180,9 @@ pub fn serve_on(listener: TcpListener, host: Arc<Host>, config: Config) -> io::R
         enable_keepalive(&stream, &peer);
         clients.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        let (host, tls, tokens, clients) = (host.clone(), tls.clone(), tokens.clone(), clients.clone());
+        let (host, tls, clients) = (host.clone(), tls.clone(), clients.clone());
         thread::spawn(move || {
-            if let Err(e) = serve_client(stream, tls, &host, &*tokens, max_frame) {
+            if let Err(e) = serve_client(stream, tls, &host, max_frame) {
                 eprintln!("cut host: client ended: {e}");
             }
             clients.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -225,7 +203,6 @@ fn serve_client(
     stream: std::net::TcpStream,
     tls: Arc<rustls::ServerConfig>,
     host: &Arc<Host>,
-    tokens: &BTreeMap<String, String>,
     max_frame: usize,
 ) -> io::Result<()> {
     let peer = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".into());
@@ -236,7 +213,7 @@ fn serve_client(
     stream
         .set_read_timeout(Some(SOCKET_POLL_INTERVAL))
         .map_err(|e| io::Error::other(format!("could not set a read timeout: {e}")))?;
-    // The same, for the direction this worker writes in. Without it a client that authenticates
+    // The same, for the direction this worker writes in. Without it a client that connects
     // and then stops reading pins this thread — and its `MAX_CLIENTS` slot — in `write_frame` as
     // soon as the queued events outgrow the socket buffer. Keepalive does not reach that peer
     // either: it is alive and acknowledging, it has just stopped draining.
@@ -247,22 +224,14 @@ fn serve_client(
     let conn = rustls::ServerConnection::new(tls).map_err(io::Error::other)?;
     let mut tls_stream = rustls::StreamOwned::new(conn, stream);
 
-    // The token before anything else: an unauthenticated frame must never reach a
-    // device, and a failed attempt is slowed so the port cannot be worked through.
-    let presented: String =
-        read_frame(&mut tls_stream, 1024, Some(PRE_AUTH_TIMEOUT), PRE_AUTH_TIMEOUT)
+    // The greeting before anything else, within a short deadline: a peer that connects and says
+    // nothing must not hold one of the `MAX_CLIENTS` slots. Its content is not checked — there is
+    // no sign-in; anyone on the network the host listens on may cut. A desktop from before
+    // sign-in was removed sends its token here, and is let in the same way.
+    let _hello: String =
+        read_frame(&mut tls_stream, 1024, Some(HELLO_TIMEOUT), HELLO_TIMEOUT)
             .map_err(io::Error::other)?;
-    let Some(client) = match_token(&presented, tokens) else {
-        eprintln!("cut host: {peer} presented a token matching no client");
-        thread::sleep(std::time::Duration::from_secs(2));
-        // Said out loud rather than closed silently. A dropped connection reaches the operator as
-        // "the host could not be reached", which is what an asleep Pi looks like too — and the two
-        // call for opposite actions: re-pair with the token from `cutd.toml`, versus wait (#112).
-        // After the delay, so naming the failure does not also make it quicker to work through.
-        let _ = write_frame(&mut tls_stream, &Response::Unauthorized, PRE_AUTH_TIMEOUT);
-        return Err(io::Error::other("bad token"));
-    };
-    eprintln!("cut host: {peer} authenticated as `{client}`");
+    eprintln!("cut host: {peer} connected");
     write_frame(&mut tls_stream, &Response::Ok, DEFAULT_BODY_TIMEOUT).map_err(io::Error::other)?;
 
     // Events for every cutter go out on this connection; requests come back on it.
@@ -286,7 +255,7 @@ fn serve_client(
         match read_frame::<_, Request>(&mut tls_stream, max_frame, None, DEFAULT_BODY_TIMEOUT) {
             Ok(request) => {
                 if let Request::Dispatch { ref device, .. } = request {
-                    eprintln!("cut host: `{client}` dispatched to {device}");
+                    eprintln!("cut host: {peer} dispatched to {device}");
                 }
                 let response = handle_request(host, request);
                 write_frame(&mut tls_stream, &response, DEFAULT_BODY_TIMEOUT)
@@ -356,22 +325,6 @@ mod tests {
         assert!(matches!(handle_request(&host, Request::Cancel { device: CAMEO.into() }), Response::Ok));
     }
 
-    fn tokens() -> std::collections::BTreeMap<String, String> {
-        [("workshop-laptop".to_string(), "aaa".to_string()),
-         ("office-desktop".to_string(), "bbb".to_string())]
-            .into_iter()
-            .collect()
-    }
-
-    #[test]
-    fn a_token_matches_only_itself_and_reports_which_name_it_was() {
-        assert_eq!(match_token("aaa", &tokens()).as_deref(), Some("workshop-laptop"));
-        assert_eq!(match_token("bbb", &tokens()).as_deref(), Some("office-desktop"));
-        assert_eq!(match_token("aab", &tokens()), None);
-        assert_eq!(match_token("aa", &tokens()), None, "a prefix is not a match");
-        assert_eq!(match_token("", &tokens()), None);
-    }
-
     /// Not a test that a dead peer is actually reaped — that needs a suspended machine or a
     /// firewall rule to fake convincingly, and a mock would only test the mock. This instead
     /// catches the regression that matters day to day: someone deleting the `enable_keepalive`
@@ -386,15 +339,5 @@ mod tests {
         enable_keepalive(&server, "test");
 
         assert!(socket2::SockRef::from(&server).keepalive().unwrap());
-    }
-
-    /// Revoking one client must leave the others working — the property the whole change exists
-    /// for, and the one a shared key cannot offer.
-    #[test]
-    fn removing_one_token_leaves_the_others_working() {
-        let mut remaining = tokens();
-        remaining.remove("workshop-laptop");
-        assert_eq!(match_token("aaa", &remaining), None, "the revoked client is out");
-        assert_eq!(match_token("bbb", &remaining).as_deref(), Some("office-desktop"));
     }
 }

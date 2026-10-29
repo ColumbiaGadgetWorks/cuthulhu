@@ -645,10 +645,10 @@ function installMockTauri(opts?: { seedTwoColorRects?: boolean; failImagePreview
                    transport: { Usb: { locator: "pi" } }, candidate: false, host: "host-1" });
   }
 
-  // The host a pairing reaches. One fingerprint, one token it accepts, one cutter behind it —
+  // The host a pairing reaches. One fingerprint, one address it answers on, one cutter behind it —
   // enough for the dialog's pairing flow to be driven end to end rather than stubbed out.
   const HOST_FINGERPRINT = "AB:CD:EF:01:23:45";
-  const HOST_TOKEN = "correct-horse";
+  const HOST_ADDRESS = "pi.local:7878";
   const PAIRED_CUTTER: DeviceInfo = {
     instance_id: "usb:pi:B", machine_id: "cameo5",
     transport: { Usb: { locator: "pi" } }, candidate: false, host: "host-2",
@@ -1444,7 +1444,7 @@ function installMockTauri(opts?: { seedTwoColorRects?: boolean; failImagePreview
     // Empty unless a test asks for a host, so existing assertions (device list, connect flow)
     // are unaffected.
     list_hosts: () => hosts,
-    // Sends no token, so it answers whatever the address is — mirroring a TLS handshake that
+    // Sends no request, so it answers whatever the address is — mirroring a TLS handshake that
     // has vouched for nothing yet.
     probe_host: () => HOST_FINGERPRINT,
     // Whether this address is already paired, asked between the probe and the confirm. Mirrors
@@ -1454,24 +1454,24 @@ function installMockTauri(opts?: { seedTwoColorRects?: boolean; failImagePreview
       if (!already) return null;
       return { id: already.id, name: already.name, sameFingerprint: a.fingerprint === HOST_FINGERPRINT };
     },
-    // Refuses the token rather than the address: a host that answers but does not accept this
-    // token is the failure the pairing flow exists to catch before anything is saved.
+    // A host that presented a certificate and then would not serve is the failure the pairing
+    // flow exists to catch before anything is saved.
     test_host: (a) => {
       if (a.fingerprint !== HOST_FINGERPRINT) throw ipcError("host_unreachable", "the host's fingerprint changed");
-      if (a.token !== HOST_TOKEN) throw ipcError("host_unreachable", "the token was refused");
+      if (a.address !== HOST_ADDRESS) throw ipcError("host_unreachable", "the host could not be reached (connection reset)");
       return [PAIRED_CUTTER];
     },
     pair_host: (a) => {
       const host = { id: "host-2", name: a.name as string, address: a.address as string, unreachable: null };
       hosts.push(host);
       // The cutter is only in `list_devices` once the host is paired, which is what the dialog
-      // re-reads for: the Test listed it to prove the token, not to populate the device list.
+      // re-reads for: the Test listed it to prove the connection, not to populate the device list.
       devices.push(PAIRED_CUTTER);
       return host;
     },
     // Mirrors `DeviceManagerHandle::forget`: a host that cannot be asked whether it is cutting
     // refuses like one that answered "busy" — the Pi keeps cutting when the network drops, and
-    // the desktop must keep the row rather than discard the token for a Job it could no longer
+    // the desktop must keep the row rather than forget the host of a Job it could no longer
     // cancel. Distinct code, because only this one can be forced past.
     forget_host: (a) => {
       if (!a.force && hosts.some((h) => h.id === a.id && h.unreachable !== null))
@@ -2977,7 +2977,7 @@ test("a desktop with no Cut Host paired shows no force-forget warning", async ({
 
 // Reaching a Pi starts here, and nothing drove it end to end while the fake refused the three
 // pairing commands. The order is the security property: the fingerprint reaches the operator
-// before the token reaches the host, so a rejected fingerprint has told the far end nothing.
+// before any request reaches the host, so a rejected fingerprint has told the far end nothing.
 test("pairing a Cut Host shows its fingerprint first, then lists it with its cutters", async ({ page }) => {
   await page.addInitScript(installMockTauri, { seedTwoColorRects: true });
   await page.goto("/");
@@ -2985,7 +2985,6 @@ test("pairing a Cut Host shows its fingerprint first, then lists it with its cut
   await page.getByRole("button", { name: /Add a Cut Host/ }).click();
 
   await page.getByLabel("Address").fill("pi.local:7878");
-  await page.getByLabel("Token").fill("correct-horse");
   await page.getByLabel("Name (optional)").fill("Workshop Pi");
   await page.getByRole("button", { name: "Pair", exact: true }).click();
 
@@ -2998,20 +2997,19 @@ test("pairing a Cut Host shows its fingerprint first, then lists it with its cut
   await expect(page.getByText("pi.local:7878")).toBeVisible();
 });
 
-// A wrong token must not leave a host saved. `pair_host` is what persists, and it is never
+// A host that fails its Test must not be saved. `pair_host` is what persists, and it is never
 // reached: the row would otherwise have to be forgotten by hand before a retry could work.
-test("a refused token pairs nothing and says so in the host's own words", async ({ page }) => {
+test("a host that fails its test pairs nothing and says so in the host's own words", async ({ page }) => {
   await page.addInitScript(installMockTauri, { seedTwoColorRects: true });
   await page.goto("/");
   await page.getByRole("button", { name: "Cut" }).click();
   await page.getByRole("button", { name: /Add a Cut Host/ }).click();
 
-  await page.getByLabel("Address").fill("pi.local:7878");
-  await page.getByLabel("Token").fill("wrong");
+  await page.getByLabel("Address").fill("other.local:7878");
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await page.getByRole("button", { name: /It matches/ }).click();
 
-  await expect(page.getByRole("alert")).toHaveText("the token was refused");
+  await expect(page.getByRole("alert")).toHaveText("the host could not be reached (connection reset)");
   await expect(page.getByRole("button", { name: /^Forget/ })).toHaveCount(0);
 });
 
@@ -3026,7 +3024,6 @@ test("forgetting a host takes its cutters with it, instead of renaming the row t
   await page.getByRole("button", { name: "Cut" }).click();
   await page.getByRole("button", { name: /Add a Cut Host/ }).click();
   await page.getByLabel("Address").fill("pi.local:7878");
-  await page.getByLabel("Token").fill("correct-horse");
   await page.getByLabel("Name (optional)").fill("Workshop Pi");
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await page.getByRole("button", { name: /It matches/ }).click();

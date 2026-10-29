@@ -431,8 +431,8 @@ pub fn existing_pairing(
 /// resolve bounded inside it, 30s body timeout) — on the main thread a mistyped address would
 /// freeze the window for the length of that wait.
 #[tauri::command(async)]
-pub fn test_host(address: String, token: String, fingerprint: String) -> Result<Vec<DeviceInfo>, IpcError> {
-    cut_host::client::HostClient::pair_check(&address, &token, &fingerprint)
+pub fn test_host(address: String, fingerprint: String) -> Result<Vec<DeviceInfo>, IpcError> {
+    cut_host::client::HostClient::pair_check(&address, &fingerprint)
         .map_err(|e| crate::device::host_error(&e))
 }
 
@@ -442,11 +442,10 @@ pub fn pair_host(
     dev: tauri::State<DeviceManagerHandle>,
     name: String,
     address: String,
-    token: String,
     fingerprint: String,
 ) -> Result<PairedHostView, IpcError> {
     let path = hosts_path()?;
-    let id = dev.pair(name.clone(), address.clone(), token, fingerprint, &path)?;
+    let id = dev.pair(name.clone(), address.clone(), fingerprint, &path)?;
     Ok(PairedHostView { id, name, address, unreachable: None })
 }
 

@@ -314,14 +314,14 @@ export async function listHosts(): Promise<PairedHostView[]> {
   return invoke("list_hosts", {});
 }
 
-/** The fingerprint a host presents, for the operator to confirm. Sends no token: it runs
+/** The fingerprint a host presents, for the operator to confirm. Sends no request: it runs
  *  before the operator has confirmed the host's identity. */
 export async function probeHost(address: string): Promise<string> {
   return invoke("probe_host", { address });
 }
 
-export async function testHost(address: string, token: string, fingerprint: string): Promise<DeviceInfo[]> {
-  return invoke("test_host", { address, token, fingerprint });
+export async function testHost(address: string, fingerprint: string): Promise<DeviceInfo[]> {
+  return invoke("test_host", { address, fingerprint });
 }
 
 /** A Cut Host already paired at this address, if there is one. `sameFingerprint: false` means the
@@ -333,8 +333,8 @@ export async function existingPairing(address: string, fingerprint: string): Pro
   return invoke("existing_pairing", { address, fingerprint });
 }
 
-export async function pairHost(name: string, address: string, token: string, fingerprint: string): Promise<PairedHostView> {
-  return invoke("pair_host", { name, address, token, fingerprint });
+export async function pairHost(name: string, address: string, fingerprint: string): Promise<PairedHostView> {
+  return invoke("pair_host", { name, address, fingerprint });
 }
 
 // `force` is the operator accepting that a host which cannot be asked may still be cutting. Only

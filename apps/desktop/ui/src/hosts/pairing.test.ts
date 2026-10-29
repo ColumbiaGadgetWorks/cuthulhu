@@ -11,13 +11,13 @@ const aHostView = (): PairedHostView => ({
 });
 
 // Each test records the order the effects ran in, because the order *is* the requirement:
-// the fingerprint is shown before anything carrying the token is sent, and nothing is saved
-// until a Test reached the host. "The right calls happened" would pass while the token leaked
-// to whatever answered at the address the operator typed.
+// the fingerprint is shown before anything is sent, and nothing is saved until a Test reached
+// the host. "The right calls happened" would pass while a request went to whatever answered at
+// the address the operator typed.
 describe("runPairing", () => {
-  it("shows the fingerprint for confirmation before any token is sent", async () => {
+  it("shows the fingerprint for confirmation before anything is sent", async () => {
     const calls: string[] = [];
-    const s = await runPairing({ address: "pi.local:7878", token: "t" }, {
+    const s = await runPairing({ address: "pi.local:7878" }, {
       probe: async () => { calls.push("probe"); return "AB:CD"; },
       test: async () => { calls.push("test"); return []; },
       save: async () => { calls.push("save"); return aHostView(); },
@@ -29,7 +29,7 @@ describe("runPairing", () => {
 
   it("saves nothing when the operator rejects the fingerprint", async () => {
     const calls: string[] = [];
-    await runPairing({ address: "pi.local:7878", token: "t" }, {
+    await runPairing({ address: "pi.local:7878" }, {
       probe: async () => "AB:CD",
       test: async () => { calls.push("test"); return []; },
       save: async () => { calls.push("save"); return aHostView(); },
@@ -38,22 +38,22 @@ describe("runPairing", () => {
     expect(calls).toEqual([]);
   });
 
-  it("saves nothing when the token is refused", async () => {
+  it("saves nothing when the host cannot be reached", async () => {
     const calls: string[] = [];
-    const s = await runPairing({ address: "pi.local:7878", token: "wrong" }, {
+    const s = await runPairing({ address: "pi.local:7878" }, {
       probe: async () => "AB:CD",
-      test: async () => { throw { code: "host_unreachable", message: "the token was refused" }; },
+      test: async () => { throw { code: "host_unreachable", message: "the host could not be reached" }; },
       save: async () => { calls.push("save"); return aHostView(); },
       existing: async () => null,
     },{ confirmFingerprint: true });
     expect(calls).toEqual([]);
     expect(s.kind).toBe("failed");
-    expect(s.message).toContain("refused");
+    expect(s.message).toContain("could not be reached");
   });
 
   it("carries the fingerprint through confirm and testing, and reports each step", async () => {
     const seen: string[] = [];
-    await runPairing({ address: "pi.local:7878", token: "t", name: "Workshop Pi" }, {
+    await runPairing({ address: "pi.local:7878", name: "Workshop Pi" }, {
       probe: async () => "AB:CD",
       test: async () => [],
       save: async () => aHostView(),
@@ -72,7 +72,7 @@ describe("runPairing", () => {
   // missing was anyone saying so, which left two identical-looking rows, one permanently broken.
   it("says when this address is already paired, and whether its certificate changed", async () => {
     const asked: string[] = [];
-    const s = await runPairing({ address: "pi.local:7878", token: "t" }, {
+    const s = await runPairing({ address: "pi.local:7878" }, {
       probe: async () => "NEW:FP",
       test: async () => [],
       save: async () => aHostView(),
@@ -88,10 +88,10 @@ describe("runPairing", () => {
   });
 
   // It reaches the confirm step, which is the point: the warning is shown before the operator
-  // sends a token, not after they have a second broken row.
+  // confirms, not after they have a second broken row.
   it("has the existing pairing in hand by the time the fingerprint is confirmed", async () => {
     const atConfirm: unknown[] = [];
-    await runPairing({ address: "pi.local:7878", token: "t" }, {
+    await runPairing({ address: "pi.local:7878" }, {
       probe: async () => "AB:CD",
       test: async () => [],
       save: async () => aHostView(),
@@ -106,7 +106,7 @@ describe("runPairing", () => {
   // Not knowing is a reason to show one less warning, never a reason to block a pairing that
   // would otherwise work.
   it("pairs anyway when the already-paired check itself fails", async () => {
-    const s = await runPairing({ address: "pi.local:7878", token: "t" }, {
+    const s = await runPairing({ address: "pi.local:7878" }, {
       probe: async () => "AB:CD",
       test: async () => [],
       save: async () => aHostView(),

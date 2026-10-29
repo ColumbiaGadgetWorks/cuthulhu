@@ -80,11 +80,11 @@ pub enum Response {
     Accepted { dispatch_id: DispatchId, admitted: Admitted },
     Ok,
     Refused(Refusal),
-    /// The token presented matched no client. Sent instead of closing the connection, because a
-    /// silent close is indistinguishable from an unreachable host and the two need opposite
-    /// responses from the operator (#112).
-    Unauthorized,
 }
+
+/// The first frame a desktop sends, once TLS is up. The host only needs *a* frame to know the
+/// handshake finished and the peer speaks the protocol; it does not check the text.
+pub const HELLO: &str = "cuthulhu";
 
 /// `Preflight` carries `PassFault` itself, not its rendered sentence: the sentence
 /// still has exactly one home (`PassFault`'s own `Display`, the drift PR #90

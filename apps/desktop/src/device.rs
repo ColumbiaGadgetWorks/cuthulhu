@@ -59,9 +59,9 @@ impl From<cutplan::presets::PresetError> for IpcError {
 /// A client failure as a code the UI can branch on, keeping the three that need three different
 /// things from the operator apart.
 ///
-/// Collapsed to one code, a rejected token, a changed certificate and a Pi that is merely asleep
-/// arrived as the same `host_unreachable` with prose that could not be told apart — so the two
-/// that need somebody to *do* something looked exactly like the one that fixes itself (#112).
+/// Collapsed to one code, a changed certificate and a Pi that is merely asleep arrived as the same
+/// `host_unreachable` with prose that could not be told apart — so the one that needs somebody to
+/// *do* something looked exactly like the one that fixes itself (#112).
 /// The message stays the client's own, unaltered (#94).
 pub(crate) fn host_error(e: &cut_host::client::ClientError) -> IpcError {
     use cut_host::client::ClientError;
@@ -69,8 +69,6 @@ pub(crate) fn host_error(e: &cut_host::client::ClientError) -> IpcError {
         // A hard refusal with its own guidance, not a reachability problem: this host is up and is
         // not the one that was paired.
         ClientError::Fingerprint { .. } => "host_fingerprint",
-        // The host answered and said no. Re-pairing is the fix; waiting is not.
-        ClientError::Unauthorized => "host_unauthorized",
         // A refusal that is the *cutter's* is reported as that fault, not as the host's: the
         // same jam, cable pull or wrong-moment verb must not read differently depending on
         // whether the cutter hangs off this laptop or off a Pi. The other refusals are the
@@ -184,7 +182,7 @@ pub(crate) struct HostConnection {
     pub paired: PairedHost,
     pub client: Option<HostClient>,
     /// Why this host has no connection, kept as the whole error rather than its prose: the code is
-    /// what tells "the token was refused" from "the Pi is asleep", and flattening it here was one
+    /// what tells "the certificate changed" from "the Pi is asleep", and flattening it here was one
     /// of the two places that distinction used to be thrown away (#112).
     pub last_error: Option<IpcError>,
 }
@@ -201,7 +199,7 @@ impl HostConnection {
     /// budget eaten by a reconnect it did not choose the length of.
     fn ensure_within(&mut self, timeout: std::time::Duration) -> Option<&HostClient> {
         if self.client.is_none() {
-            match HostClient::connect_within(&self.paired.address, &self.paired.token, &self.paired.fingerprint, timeout) {
+            match HostClient::connect_within(&self.paired.address, &self.paired.fingerprint, timeout) {
                 Ok(c) => {
                     self.client = Some(c);
                     self.last_error = None;
@@ -243,9 +241,8 @@ pub struct ExistingPairing {
 
 /// What the UI is told about a paired Cut Host.
 ///
-/// Deliberately not `PairedHost`: that holds the token, and anything sent to the webview can
-/// reach a `console.log` or a devtools session. The UI needs to render a row and address the
-/// host by id; it does not need the secret.
+/// Deliberately not `PairedHost`: the UI needs to render a row and address the host by id, and
+/// what it is not sent it cannot come to depend on.
 #[derive(Clone, Debug, Serialize)]
 pub struct PairedHostView {
     pub id: HostId,
@@ -254,8 +251,8 @@ pub struct PairedHostView {
     /// The last thing that went wrong with this host, or `None` while nothing has. The name is the
     /// serialized one this field has always had, kept because every consumer only prints the
     /// message: since #283 it also carries a host that answered outside the protocol, which was
-    /// reached and whose sentence says so, and before that a refused token, a changed certificate
-    /// and a refusal. The row prints it when it is present; nothing reads what is in it.
+    /// reached and whose sentence says so, and before that a changed certificate and a
+    /// refusal. The row prints it when it is present; nothing reads what is in it.
     pub unreachable: Option<String>,
 }
 
@@ -506,7 +503,7 @@ impl DeviceManagerHandle {
         self.hosts.lock().unwrap().remove(id);
     }
 
-    /// What `list_hosts` gives the UI: enough to render a row and address it, never the token.
+    /// What `list_hosts` gives the UI: enough to render a row and address it.
     ///
     /// Reads each connection in turn, so it still waits on a host `list_devices` is dialling. It
     /// walks the same map in the same order, so against a sweep of unreachable hosts it trails one
@@ -564,12 +561,11 @@ impl DeviceManagerHandle {
         &self,
         name: String,
         address: String,
-        token: String,
         fingerprint: String,
         hosts_path: &Path,
     ) -> Result<HostId, IpcError> {
         // Prove it before writing it down, so a saved host has always worked at least once.
-        HostClient::pair_check(&address, &token, &fingerprint).map_err(|e| host_error(&e))?;
+        HostClient::pair_check(&address, &fingerprint).map_err(|e| host_error(&e))?;
 
         // ponytail: reads paired_hosts() once, mints, saves, then add_hosts — three separate lock
         // acquisitions, so two concurrent pair() calls can mint the same id and one save can
@@ -577,7 +573,7 @@ impl DeviceManagerHandle {
         // being true, hold `hosts` across mint-and-save or mint from a counter that isn't a re-read.
         let mut prospective = self.paired_hosts();
         let id = crate::hosts::next_id(&prospective);
-        let paired = PairedHost { id: id.clone(), name, address, fingerprint, token };
+        let paired = PairedHost { id: id.clone(), name, address, fingerprint };
         prospective.push(paired.clone());
         crate::hosts::save(hosts_path, &prospective)
             .map_err(|e| IpcError::new("hosts_unwritable", e.to_string()))?;
@@ -594,8 +590,8 @@ impl DeviceManagerHandle {
     /// deletion, on the reasoning that a Pi which cannot answer cannot be busy and that a Pi gone
     /// for good must not become unforgettable. The first half is false and is the whole point of
     /// the product: drop Wi-Fi mid-Job and the Pi keeps cutting. Forgetting there discards the
-    /// token and the route needed to cancel, resume or confirm that Job once the network comes
-    /// back — the one machine that could stop the blade throws away the key. The second half is
+    /// route needed to cancel, resume or confirm that Job once the network comes
+    /// back — the one machine that could stop the blade throws away the way back. The second half is
     /// still true, which is why the escape hatch is `force` rather than absent.
     ///
     /// The two refusals carry different codes because the operator's next move differs: cancel
@@ -2241,7 +2237,6 @@ mod tests {
             name: "Workshop Pi".into(),
             address: addr.into(),
             fingerprint: "aa:bb:cc".into(),
-            token: "s3cret".into(),
         }
     }
 
@@ -2511,22 +2506,6 @@ mod tests {
         assert!(dev.list_devices().iter().all(|d| d.host.is_none()));
     }
 
-    /// The token must not leave the Rust side. A view type is the guard, and this is what stops
-    /// a later refactor from "simplifying" it back to sending `PairedHost`.
-    #[test]
-    fn a_host_view_carries_no_token() {
-        let dev = test_device_setup();
-        dev.add_host(a_paired_host("host-1", "127.0.0.1:1"));
-
-        // `unreachable` is `None` here on purpose: nothing has dialled this host yet, and the
-        // view reports what is known rather than provoking a connection to find out.
-        let views = dev.host_views();
-        assert_eq!(views.len(), 1);
-        let json = serde_json::to_string(&views[0]).unwrap();
-        assert!(!json.contains("s3cret"), "a token reached the view: {json}");
-        assert!(json.contains("host-1"), "the id is what the UI addresses: {json}");
-    }
-
     #[test]
     fn pairing_mints_an_id_that_does_not_collide() {
         let dev = test_device_setup();
@@ -2548,8 +2527,6 @@ mod tests {
         _dir: tempfile::TempDir,
     }
 
-    const HOST_TOKEN: &str = "test-token";
-
     fn start_loopback_host() -> LoopbackHost {
         let dir = tempfile::tempdir().unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -2557,7 +2534,6 @@ mod tests {
 
         let config = cut_host::config::Config {
             bind: listener.local_addr().unwrap(),
-            tokens: [("test-client".to_string(), HOST_TOKEN.to_string())].into_iter().collect(),
             max_frame: cut_host::frame::DEFAULT_MAX_FRAME,
             cert_dir: dir.path().to_path_buf(),
         };
@@ -2580,23 +2556,9 @@ mod tests {
         blocker.join("hosts.json")
     }
 
-    /// The code, not just the failure. A rejected token, a changed certificate and an offline Pi
-    /// call for three different things from the operator, and all three used to arrive as
-    /// `host_unreachable` with prose that could not be told apart (#112).
-    #[test]
-    fn pairing_with_the_wrong_token_is_refused_and_saves_nothing() {
-        let host = start_loopback_host();
-        let dir = tempfile::tempdir().unwrap();
-        let hosts_path = dir.path().join("hosts.json");
-        let dev = test_device_setup();
-
-        let err = dev
-            .pair("Pi".into(), host.addr.clone(), "wrong-token".into(), host.fingerprint.clone(), &hosts_path)
-            .expect_err("a token this host does not hold must not pair");
-        assert_eq!(err.code, "host_unauthorized", "got {err:?}");
-        assert!(!hosts_path.exists(), "a pairing that never proved itself must not be written");
-    }
-
+    /// The code, not just the failure. A changed certificate and an offline Pi call for different
+    /// things from the operator, and both used to arrive as `host_unreachable` with prose that
+    /// could not be told apart (#112).
     #[test]
     fn pairing_with_the_wrong_fingerprint_is_refused_and_saves_nothing() {
         let host = start_loopback_host();
@@ -2605,7 +2567,7 @@ mod tests {
         let dev = test_device_setup();
 
         let err = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), "wrong:fingerprint".into(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), "wrong:fingerprint".into(), &hosts_path)
             .expect_err("a certificate that is not the pinned one is a hard refusal");
         assert_eq!(err.code, "host_fingerprint", "got {err:?}");
         assert!(!hosts_path.exists());
@@ -2619,7 +2581,7 @@ mod tests {
 
         // The conventional black-holed address: routable, never answering.
         let err = dev
-            .pair("Pi".into(), "10.255.255.1:7878".into(), "token".into(), "aa:bb:cc".into(), &hosts_path)
+            .pair("Pi".into(), "10.255.255.1:7878".into(), "aa:bb:cc".into(), &hosts_path)
             .expect_err("nothing answers this address");
         assert_eq!(err.code, "host_unreachable", "got {err:?}");
         assert!(!hosts_path.exists());
@@ -2657,7 +2619,7 @@ mod tests {
         let hosts_path = unwritable_hosts_path(dir.path());
         let dev = test_device_setup();
 
-        let err = dev.pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path);
+        let err = dev.pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path);
         assert!(err.is_err(), "the save must fail against this path");
         assert!(dev.paired_hosts().is_empty(), "a failed save must not leave a phantom host in memory");
     }
@@ -2677,7 +2639,7 @@ mod tests {
     }
 
     /// The reversal: a host that cannot be asked is not a host known to be idle. Drop Wi-Fi
-    /// mid-Job and the Pi keeps cutting — discarding the token there throws away the only route
+    /// mid-Job and the Pi keeps cutting — forgetting the host there throws away the only route
     /// left to cancel it. Refused unforced, with its own code, and let through by the force the
     /// operator has to ask for explicitly.
     #[test]
@@ -2705,13 +2667,13 @@ mod tests {
         let dev = test_device_setup();
 
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
 
         // `dispatch` returns as soon as the daemon accepts the id; the cut itself runs on a
         // thread there (`Host::dispatch`). Poll until the cutter reports busy rather than
         // asserting on a race.
-        let client = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let client = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
         client
             .dispatch(
                 &cut_host::protocol::DispatchId("d-1".into()),
@@ -2787,7 +2749,7 @@ mod tests {
         app.add_rect(10.0, 10.0);
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
 
         // Preflight runs against the local cutter...
@@ -2808,7 +2770,7 @@ mod tests {
 
         // The daemon accepts a dispatch before its cut thread starts, so a single snapshot could
         // read idle on a host that is about to move. Hold the assertion open instead.
-        let client = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let client = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             let active = client
@@ -2829,7 +2791,7 @@ mod tests {
         let dev = test_device_setup();
 
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
 
         dev.forget(&id, &hosts_path, false).expect("it answers, and nothing is running on it");
@@ -2846,7 +2808,7 @@ mod tests {
         let dev = test_device_setup();
 
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
         dev.connected.lock().unwrap().replace(DeviceInfo { host: Some(id.clone()), ..test_instance() });
 
@@ -2897,7 +2859,6 @@ mod tests {
             name: "Workshop Pi".into(),
             address: healthy.addr.clone(),
             fingerprint: healthy.fingerprint.clone(),
-            token: HOST_TOKEN.into(),
         });
 
         // Taken before anything is in flight, so that observing it later cannot itself be what
@@ -2973,7 +2934,7 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("pairing with the loopback host");
         let aimed = host_cameo(&host_id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -2999,7 +2960,7 @@ mod tests {
         let dev = test_device_setup();
 
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
         dev.add_host(a_paired_host("host-elsewhere", "127.0.0.1:1"));
         dev.connected.lock().unwrap().replace(DeviceInfo { host: Some(id.clone()), ..test_instance() });
@@ -3137,7 +3098,7 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("pairing with the loopback host");
         let aimed = host_cameo(&host_id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -3176,7 +3137,7 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), eater.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), eater.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("the relay forwards the pairing check to a host that answers");
         // Establishes the desktop's own connection through the relay first, so arming it takes
         // away a dispatch reply rather than a piece of the TLS handshake.
@@ -3192,7 +3153,7 @@ mod tests {
         assert_eq!(err.code, "dispatch_unconfirmed", "{}", err.message);
 
         // Straight to the host, around the relay: the Job really did land, and really did run.
-        let direct = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let direct = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
         wait_until(|| cameo_is_active(&direct), "the dispatch never reached the host");
         direct.confirm_pass_done(cut_host::host::testing::CAMEO).unwrap();
         wait_until(|| !cameo_is_active(&direct), "the job never finished");
@@ -3217,12 +3178,12 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
         let aimed = host_cameo(&host_id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
 
-        let direct = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let direct = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
 
         dev.execute_cut(aimed.clone(), a_square(10.0)).expect("first sheet");
         wait_until(|| cameo_is_active(&direct), "the first cut never started");
@@ -3250,7 +3211,7 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("this host answers and the fingerprint matches");
         let aimed = host_cameo(&host_id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -3259,7 +3220,7 @@ mod tests {
         let started = dev.execute_cut(aimed, two_passes).expect("dispatch");
         assert!(!started.duplicate, "nothing was in doubt, so this is a new Job");
 
-        let direct = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let direct = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
         wait_until(|| cameo_is_active(&direct), "the dispatch never reached the host");
 
         let snap = direct
@@ -3616,7 +3577,7 @@ mod tests {
         let hosts_path = dir.path().join("hosts.json");
         let dev = test_device_setup();
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("pairing with the loopback host");
         let aimed = host_cameo(&id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -3696,7 +3657,7 @@ mod tests {
         let hosts_path = dir.path().join("hosts.json");
         let dev = test_device_setup();
         let id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("pairing with the loopback host");
         let aimed = host_cameo(&id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -3735,7 +3696,7 @@ mod tests {
         let dev = test_device_setup();
 
         let host_id = dev
-            .pair("Pi".into(), host.addr.clone(), HOST_TOKEN.into(), host.fingerprint.clone(), &hosts_path)
+            .pair("Pi".into(), host.addr.clone(), host.fingerprint.clone(), &hosts_path)
             .expect("pairing with the loopback host");
         let aimed = host_cameo(&host_id);
         *dev.connected.lock().unwrap() = Some(aimed.clone());
@@ -3752,7 +3713,7 @@ mod tests {
         );
 
         // And it stops holding the window once the cutter says it would take another Job.
-        let direct = cut_host::client::HostClient::connect(&host.addr, HOST_TOKEN, &host.fingerprint).unwrap();
+        let direct = cut_host::client::HostClient::connect(&host.addr, &host.fingerprint).unwrap();
         wait_until(|| cameo_is_active(&direct), "the cut never started");
         direct.confirm_pass_done(cut_host::host::testing::CAMEO).unwrap();
         wait_until(|| !cameo_is_active(&direct), "the cut never finished");

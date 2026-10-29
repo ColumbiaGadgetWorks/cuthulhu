@@ -406,7 +406,7 @@ impl Host {
             .collect()
     }
 
-    /// Cancel, resume and confirm take no client identity on purpose. One token is
+    /// Cancel, resume and confirm take no client identity on purpose. There is
     /// one trust level: whoever walks to the cutter to swap material for a Pass a
     /// machine cannot be polled through is not necessarily sitting at the laptop
     /// that dispatched the Job.

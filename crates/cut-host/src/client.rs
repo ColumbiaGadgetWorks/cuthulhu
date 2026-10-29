@@ -20,10 +20,6 @@ use crate::protocol::{Admitted, DeviceSnapshot, DispatchId, Event, Refusal, Requ
 pub enum ClientError {
     Refused(Refusal),
     Fingerprint { expected: String, found: String },
-    /// The host answered, and refused the token. Distinct from `Transport` because the operator's
-    /// next move is: re-pair with the token from the Pi's `cutd.toml` — not wait for a host that
-    /// is merely asleep (#112).
-    Unauthorized,
     /// A reply that arrived and the request could not use, named rather than rendered. Distinct
     /// from `Transport` because a host that answered was reached — the answer is the proof — and
     /// the desktop's `host_unreachable` sent the operator to check a network that had just carried
@@ -60,8 +56,6 @@ impl std::fmt::Display for ClientError {
             ClientError::Fingerprint { expected, found } =>
                 write!(f, "this host presented a different certificate than the one paired \
                            (expected {expected}, found {found})"),
-            ClientError::Unauthorized =>
-                write!(f, "this host refused the token; pair again with the one in its `cutd.toml`"),
             ClientError::WrongReply { expected, found } =>
                 write!(f, "this host answered with `{found}` where `{expected}` was expected"),
             ClientError::WrongDispatch =>
@@ -132,7 +126,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCert {
 /// is the whole of trust-on-first-use, and `probe_fingerprint` is its only caller.
 ///
 /// Safe here for two reasons that only hold together, and safe nowhere else because no other
-/// call site has both. Nothing secret crosses a probe: it sends no token and no request, so a
+/// call site has both. Nothing secret crosses a probe: it sends no request, so a
 /// host that lied about its identity is handed nothing it did not already have. And the
 /// fingerprint a probe returns is not trusted, it is *shown* — what gets pinned is what the
 /// operator confirmed against the Pi's own console, and every connection after that goes through
@@ -232,8 +226,7 @@ fn connect_by_deadline(addr: &str, deadline: Instant) -> Result<TcpStream, Clien
 /// it replaces was to connect with a deliberately wrong fingerprint and read the real one back out
 /// of the refusal's prose.
 ///
-/// No token is sent and no `Request` is written — there is no credential in this signature to
-/// send — and the connection is closed as soon as the certificate is in hand. See `AnyCert` for
+/// No `Request` is written, and the connection is closed as soon as the certificate is in hand. See `AnyCert` for
 /// why accepting any certificate is safe on this path and on no other.
 pub fn probe_fingerprint(addr: &str, timeout: Duration) -> Result<String, ClientError> {
     let deadline = Instant::now() + timeout;
@@ -308,8 +301,8 @@ pub struct HostClient {
 }
 
 impl HostClient {
-    pub fn connect(addr: &str, token: &str, pinned_fingerprint: &str) -> Result<HostClient, ClientError> {
-        Self::connect_within(addr, token, pinned_fingerprint, CONNECT_TIMEOUT)
+    pub fn connect(addr: &str, pinned_fingerprint: &str) -> Result<HostClient, ClientError> {
+        Self::connect_within(addr, pinned_fingerprint, CONNECT_TIMEOUT)
     }
 
     /// Same as `connect`, but the connect attempt is capped at `timeout` rather than always
@@ -318,7 +311,6 @@ impl HostClient {
     /// budget eaten by a reconnect it did not choose the length of.
     pub fn connect_within(
         addr: &str,
-        token: &str,
         pinned_fingerprint: &str,
         timeout: Duration,
     ) -> Result<HostClient, ClientError> {
@@ -351,7 +343,7 @@ impl HostClient {
         // handshake happens inside this write, and a peer that completes the TCP connect and then
         // stops reading must not hold a short-budget caller open past it.
         let remaining = deadline.saturating_duration_since(Instant::now());
-        write_frame(&mut stream, &token.to_string(), remaining).map_err(|e| {
+        write_frame(&mut stream, &crate::protocol::HELLO.to_string(), remaining).map_err(|e| {
             // A handshake that failed on the pin reaches here as an I/O error, so
             // the more useful message is the one the verifier can give.
             match verifier.seen.lock().unwrap().clone() {
@@ -369,12 +361,6 @@ impl HostClient {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         match read_frame::<_, Response>(&mut stream, 4096, Some(remaining), remaining) {
             Ok(Response::Ok) => {}
-            // The host answered and said no. Before it did, this arrived as a dropped connection —
-            // the same thing an asleep Pi looks like, and the two need opposite things from the
-            // operator.
-            Ok(Response::Unauthorized) => return Err(ClientError::Unauthorized),
-            // Decided after `Unauthorized`, not instead of it: a refused token is also not `Ok`,
-            // and it is the one answer on this path that tells the operator what to do next.
             Ok(other) => return Err(wrong_reply("Ok", &other)),
             Err(e) => {
                 if let Some(found) = verifier.seen.lock().unwrap().clone() {
@@ -396,14 +382,13 @@ impl HostClient {
     /// drop the connection.
     ///
     /// Pairing that saves first and discovers later is how an operator ends up with an entry
-    /// that has never worked. `connect` alone proves the fingerprint and the token; listing
+    /// that has never worked. `connect` alone proves the fingerprint; listing
     /// proves the daemon is actually serving.
     pub fn pair_check(
         addr: &str,
-        token: &str,
         pinned_fingerprint: &str,
     ) -> Result<Vec<DeviceInfo>, ClientError> {
-        HostClient::connect(addr, token, pinned_fingerprint)?.devices()
+        HostClient::connect(addr, pinned_fingerprint)?.devices()
     }
 
     pub fn devices(&self) -> Result<Vec<DeviceInfo>, ClientError> {
@@ -551,7 +536,6 @@ fn response_name(response: &Response) -> &'static str {
         Response::Accepted { .. } => "Accepted",
         Response::Ok => "Ok",
         Response::Refused(_) => "Refused",
-        Response::Unauthorized => "Unauthorized",
     }
 }
 
@@ -598,7 +582,7 @@ pub mod testing {
     /// not hold the thread for the whole run.
     const BUDGET: Duration = Duration::from_secs(10);
 
-    /// Answers `replies` in order: the first as the greeting a token earns, then one per request.
+    /// Answers `replies` in order: the first as the reply to the greeting, then one per request.
     ///
     /// Binds port 0 so tests run concurrently, and replays the same script on every connection, so
     /// a client that redials is answered rather than left hanging.
@@ -638,8 +622,7 @@ pub mod testing {
         stream.set_write_timeout(Some(SOCKET_POLL_INTERVAL)).expect("a write timeout on a loopback socket");
         let Ok(conn) = rustls::ServerConnection::new(tls) else { return };
         let mut tls = rustls::StreamOwned::new(conn, stream);
-        // The token is read and discarded: a client that got this far already pinned the
-        // certificate, and nothing here is proving anything about tokens.
+        // The greeting is read and discarded, as the real host does.
         if read_frame::<_, String>(&mut tls, 1024, Some(BUDGET), BUDGET).is_err() {
             return;
         }
@@ -667,7 +650,7 @@ mod tests {
     #[test]
     fn connect_to_a_silently_unreachable_host_fails_within_the_timeout() {
         let start = Instant::now();
-        let err = match HostClient::connect("10.255.255.1:7878", "token", "aa:bb:cc") {
+        let err = match HostClient::connect("10.255.255.1:7878", "aa:bb:cc") {
             Ok(_) => panic!("nothing should answer this address"),
             Err(e) => e,
         };
@@ -689,7 +672,7 @@ mod tests {
     fn a_name_that_cannot_be_resolved_does_not_wedge_later_attempts() {
         let unresolvable = "cuthulhu-does-not-exist.invalid:7878";
         for attempt in 1..=2 {
-            let err = HostClient::connect(unresolvable, "token", "aa:bb:cc")
+            let err = HostClient::connect(unresolvable, "aa:bb:cc")
                 .err()
                 .expect("nothing answers a name that does not resolve");
             assert!(
@@ -763,10 +746,6 @@ mod tests {
                     .into(),
             ),
             (
-                ClientError::Unauthorized,
-                "this host refused the token; pair again with the one in its `cutd.toml`".into(),
-            ),
-            (
                 ClientError::WrongReply { expected: "Snapshots", found: "Devices" },
                 "this host answered with `Devices` where `Snapshots` was expected".into(),
             ),
@@ -784,10 +763,9 @@ mod tests {
         }
     }
 
-    /// Every name a mismatch can report. `Refused` and `Unauthorized` are reachable here even
-    /// though each has a `ClientError` of its own: `call` turns a `Refused` into one only in a
-    /// reply slot, and the greeting decides `Unauthorized` only there — so either arriving in the
-    /// other place is a wrong reply and has to be nameable.
+    /// Every name a mismatch can report. `Refused` is reachable here even though it has a
+    /// `ClientError` of its own: `call` turns a `Refused` into one only in a reply slot, so one
+    /// arriving as the greeting's answer is a wrong reply and has to be nameable.
     #[test]
     fn every_response_variant_has_a_name() {
         let named: Vec<(Response, &str)> = vec![
@@ -802,7 +780,6 @@ mod tests {
             ),
             (Response::Ok, "Ok"),
             (Response::Refused(Refusal::UnknownDevice("usb:1:4".into())), "Refused"),
-            (Response::Unauthorized, "Unauthorized"),
         ];
         for (response, name) in named {
             assert_eq!(response_name(&response), name, "{response:?}");
@@ -841,7 +818,7 @@ mod tests {
             Response::Ok,
             Response::Devices(Vec::new()),
         ]);
-        let client = HostClient::connect(&host.addr, "token", &host.fingerprint)
+        let client = HostClient::connect(&host.addr, &host.fingerprint)
             .expect("this host greets a client normally; only its replies are wrong");
 
         assert_eq!(
@@ -891,7 +868,7 @@ mod tests {
                 admitted: Admitted::AlreadyAccepted,
             },
         ]);
-        let client = HostClient::connect(&host.addr, "token", &host.fingerprint)
+        let client = HostClient::connect(&host.addr, &host.fingerprint)
             .expect("this host greets a client normally; only its replies are wrong");
 
         let refused = client
@@ -915,7 +892,7 @@ mod tests {
     /// `connect`'s failure. `HostClient` is deliberately not `Debug` — it holds a TLS stream — so
     /// `expect_err` cannot be used on its result.
     fn connect_failure(host: &testing::MisbehavingHost) -> ClientError {
-        match HostClient::connect(&host.addr, "token", &host.fingerprint) {
+        match HostClient::connect(&host.addr, &host.fingerprint) {
             Ok(_) => panic!("this host's greeting cannot open a session"),
             Err(e) => e,
         }
@@ -932,15 +909,4 @@ mod tests {
         );
     }
 
-    /// A refused token is also "not `Ok`", and the greeting decides it before it reaches a
-    /// mismatch at all — reading it as a wrong reply would lose the one refusal on this path that
-    /// tells the operator what to do about it (#112).
-    #[test]
-    fn a_refused_token_is_still_a_refused_token_rather_than_a_wrong_reply() {
-        let host = testing::start_host_answering(vec![Response::Unauthorized]);
-        assert_eq!(
-            connect_failure(&host).to_string(),
-            "this host refused the token; pair again with the one in its `cutd.toml`"
-        );
-    }
 }

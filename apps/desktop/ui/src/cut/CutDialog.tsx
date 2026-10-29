@@ -427,7 +427,7 @@ export function CutDialog({
   // Both lists come back from the backend, which has just persisted the host — the new row is
   // never assembled on this side. Appending it here put the same Pi in the list twice, listed
   // under one name and forgettable once. Its cutters arrive the same way: `runPairing`'s Test
-  // listed them to prove the token, not to populate this.
+  // listed them to prove the connection, not to populate this.
   const paired = () => {
     setPairing(false);
     refreshList();

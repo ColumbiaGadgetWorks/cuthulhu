@@ -76,7 +76,7 @@ export type ForgetResult = { hosts: PairedHostView[]; message: string | null; fo
  *
  * The row goes only once the Rust side has agreed, never optimistically: it refuses while a cut
  * is active on that host (`host_busy`) *and* whenever it cannot ask at all (`host_unconfirmed`),
- * because discarding the token would strand a Job the desktop can no longer cancel — a blade
+ * because forgetting the host would strand a Job the desktop can no longer cancel — a blade
  * still moving on the Pi with nothing left to stop it. Removing the row first and restoring it on
  * refusal would show that host as gone, however briefly, at the one moment it most needs to be
  * reachable.
@@ -87,9 +87,8 @@ export type ForgetResult = { hosts: PairedHostView[]; message: string | null; fo
  * reflex. A host that answered "busy" is reachable, so `cancel` still works there and no force is
  * offered at all.
  *
- * A refusal leaves the list untouched rather than partly erased. Nothing here clears a stored
- * token on its own: re-pairing replaces it, and a host that plainly needs attention is better
- * than one whose credentials this side quietly dropped.
+ * A refusal leaves the list untouched rather than partly erased. Nothing here drops a host on its
+ * own: a host that plainly needs attention is better than one this side quietly forgot.
  *
  * The refusal is the Rust side's own prose, unaltered (#94).
  */

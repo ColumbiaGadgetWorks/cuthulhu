@@ -17,17 +17,17 @@ export type PairingState = {
 };
 
 /** `name` is what the operator will see in the device list; it defaults to the address. */
-export type PairingInput = { address: string; token: string; name?: string };
+export type PairingInput = { address: string; name?: string };
 
 /** Injected so the flow can be tested without a backend. The dialog passes
  *  `probeHost`/`testHost`/`pairHost` straight through. */
 export type PairingEffects = {
   probe: (address: string) => Promise<string>;
-  test: (address: string, token: string, fingerprint: string) => Promise<DeviceInfo[]>;
-  save: (name: string, address: string, token: string, fingerprint: string) => Promise<PairedHostView>;
+  test: (address: string, fingerprint: string) => Promise<DeviceInfo[]>;
+  save: (name: string, address: string, fingerprint: string) => Promise<PairedHostView>;
   /** Whether this address is already paired, and whether the probed certificate is the pinned
-   *  one. Asked between the probe and the confirm, which is the last moment before the operator
-   *  types a token they may not need to type at all. */
+   *  one. Asked between the probe and the confirm, so the warning is in front of the operator
+   *  when they decide. */
   existing: (address: string, fingerprint: string) => Promise<ExistingPairing | null>;
 };
 
@@ -40,10 +40,10 @@ export type PairingOptions = {
 /**
  * Pair a Cut Host, trust-on-first-use: probe, confirm, test, save.
  *
- * The order is the security property, not a rendering detail. `probe` sends no token, so the
+ * The order is the security property, not a rendering detail. `probe` sends no request, so the
  * fingerprint reaches the operator before this side has vouched for anything; only once they
- * confirm it does `test` carry the token. Reject at the confirm step and nothing that knows the
- * token has spoken to whatever answered at that address.
+ * confirm it does `test` speak the protocol to that host. Reject at the confirm step and nothing
+ * has been sent to whatever answered at that address.
  *
  * Nothing is saved until `test` reached the host and listed its cutters — a pairing that saves
  * first and discovers later is how one Pi ends up with two entries.
@@ -53,7 +53,7 @@ export type PairingOptions = {
  * a hard refusal on every later connection, so re-pairing is the only recovery there is — but the
  * result is a second row, identical to the first but for which of them errors, and nothing
  * anywhere explaining why (#107). The warning is the whole of the fix, and the confirm step is
- * where it belongs: after the fingerprint is known, before a token is sent.
+ * where it belongs: after the fingerprint is known, before anything is saved.
  *
  * Every message rendered from the returned state is the Rust side's own prose, unaltered (#94).
  */
@@ -88,13 +88,13 @@ export async function runPairing(
   publish({ kind: "testing", fingerprint, existing: existing ?? undefined });
   let devices: DeviceInfo[];
   try {
-    devices = await effects.test(input.address, input.token, fingerprint);
+    devices = await effects.test(input.address, fingerprint);
   } catch (e) {
     return publish({ kind: "failed", fingerprint, existing: existing ?? undefined, message: ipcErrorMessage(e) });
   }
 
   try {
-    const host = await effects.save(input.name ?? input.address, input.address, input.token, fingerprint);
+    const host = await effects.save(input.name ?? input.address, input.address, fingerprint);
     return publish({ kind: "paired", fingerprint, existing: existing ?? undefined, devices, host });
   } catch (e) {
     return publish({ kind: "failed", fingerprint, existing: existing ?? undefined, message: ipcErrorMessage(e) });

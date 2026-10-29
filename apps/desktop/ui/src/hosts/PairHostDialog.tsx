@@ -41,7 +41,6 @@ const fieldStyle: CSSProperties = { display: "flex", flexDirection: "column", ga
 
 export function PairHostDialog({ onPaired, onClose }: Props) {
   const [address, setAddress] = useState("");
-  const [token, setToken] = useState("");
   const [name, setName] = useState("");
   const [state, setState] = useState<PairingState>({ kind: "idle" });
   // The operator answers the fingerprint with a click, so the confirm step parks on a promise
@@ -52,7 +51,7 @@ export function PairHostDialog({ onPaired, onClose }: Props) {
 
   async function start() {
     const done = await runPairing(
-      { address: address.trim(), token, name: name.trim() || undefined },
+      { address: address.trim(), name: name.trim() || undefined },
       { probe: ipc.probeHost, test: ipc.testHost, save: ipc.pairHost, existing: ipc.existingPairing },
       {
         confirmFingerprint: () => new Promise<boolean>(resolve => { decide.current = resolve; }),
@@ -77,11 +76,6 @@ export function PairHostDialog({ onPaired, onClose }: Props) {
           Address
           <input value={address} placeholder="pi.local:7878" disabled={running}
                  onChange={e => setAddress(e.target.value)} />
-        </label>
-        <label style={fieldStyle}>
-          Token
-          <input value={token} type="password" disabled={running}
-                 onChange={e => setToken(e.target.value)} />
         </label>
         <label style={fieldStyle}>
           Name (optional)
@@ -111,7 +105,7 @@ export function PairHostDialog({ onPaired, onClose }: Props) {
                 certificate. Pairing again adds a second entry rather than replacing it.
               </p>
             )}
-            {/* The token has not been sent yet, and will not be unless this is confirmed. */}
+            {/* Nothing has been sent to the host yet, and will not be unless this is confirmed. */}
             <p style={{ margin: 0 }}>The host presented this fingerprint. Check that it matches the
               one shown on the Cut Host's own console before continuing.</p>
             <code style={{ wordBreak: "break-all" }}>{state.fingerprint}</code>
@@ -122,7 +116,7 @@ export function PairHostDialog({ onPaired, onClose }: Props) {
           </div>
         )}
 
-        {state.kind === "testing" && <p>Testing the token…</p>}
+        {state.kind === "testing" && <p>Testing the connection…</p>}
 
         {state.kind === "paired" && (
           <div>
@@ -141,7 +135,7 @@ export function PairHostDialog({ onPaired, onClose }: Props) {
             ? <button style={btn} onClick={onClose}>Done</button>
             : <>
                 <button style={btn} onClick={onClose}>Cancel</button>
-                <button style={btn} disabled={running || !address.trim() || !token} onClick={start}>Pair</button>
+                <button style={btn} disabled={running || !address.trim()} onClick={start}>Pair</button>
               </>}
         </div>
       </div>

@@ -90,13 +90,11 @@ it has to be able to traverse the directory and read the file to load its own co
 # don't already know it. See "Binding to every interface" below if you
 # actually want this reachable from outside your LAN.
 bind = "192.168.1.50:7878"
-
-# One token per client, named so you can tell them apart. Generate each with:
-#   head -c 32 /dev/urandom | base64
-# Revoking a client is deleting its line and restarting; the others keep working.
-[tokens]
-workshop-laptop = "REPLACE-ME"
 ```
+
+There is no sign-in: any computer that can reach this address can pair with the host and cut on
+it. Keep the Pi on a network you trust, and do not forward the port to the internet. A `[tokens]`
+section left over from an older setup is ignored.
 
 ```sh
 sudo chown cuthulhu:cuthulhu /etc/cuthulhu/cutd.toml
@@ -104,7 +102,8 @@ sudo chmod 0600 /etc/cuthulhu/cutd.toml
 ```
 
 The certificate is generated into `/var/lib/cuthulhu/` on first run. Its fingerprint is printed at
-startup — that is what you confirm when pairing a desktop.
+startup — that is what you confirm when pairing a desktop. Pairing asks only for the address: the
+desktop shows the fingerprint it found, you check it matches, and it is remembered.
 
 ## Serial cutters
 
@@ -233,22 +232,5 @@ daemon refuses that bind unless `--allow-public-bind` is added to the unit's `Ex
 the thing on the other end of an open port here can be told to move a blade, and that should be a
 decision you made on purpose rather than a default you inherited. If you genuinely need it — the Pi
 has multiple LAN interfaces and you want the daemon reachable on all of them, say — set
-`bind = "0.0.0.0:7878"` in `cutd.toml` and add the flag. Anything that can reach that port is then
-trusted with the same authority as a paired desktop, limited only by the token.
-
-## Rotating a token
-
-Change that client's line under `[tokens]` in `cutd.toml` and restart. Only that desktop needs to be
-paired again — the other entries, and the clients holding them, are untouched.
-
-## Revoking one client
-
-Delete that client's line from `[tokens]` and restart:
-
-```sh
-sudo systemctl restart cuthulhu-cutd
-```
-
-Every other client keeps working. `journalctl -u cuthulhu-cutd` names which client authenticated
-and which dispatched each Job, so you can tell which line to remove. A restart issued while a cut is
-running waits for it, as above — the revocation takes effect when the Job ends.
+`bind = "0.0.0.0:7878"` in `cutd.toml` and add the flag. Anything that can reach that port can
+then cut.

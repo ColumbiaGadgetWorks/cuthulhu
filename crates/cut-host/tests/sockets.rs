@@ -23,7 +23,7 @@ use cut_host::serve::MAX_CLIENTS;
 use driver_core::Phase;
 
 mod fixtures;
-use fixtures::{square_pass, start_test_host, CAMEO, TOKEN};
+use fixtures::{square_pass, start_test_host, CAMEO};
 
 /// The design's most distinctive claim: any authorized client may cancel, resume or confirm any
 /// Job, not only the one that dispatched it — because whoever walks to the cutter to swap material
@@ -35,8 +35,8 @@ use fixtures::{square_pass, start_test_host, CAMEO, TOKEN};
 #[test]
 fn a_job_dispatched_on_one_connection_is_confirmed_on_another() {
     let host = start_test_host();
-    let laptop = HostClient::connect(&host.addr, TOKEN, &host.fingerprint).unwrap();
-    let workshop = HostClient::connect(&host.addr, TOKEN, &host.fingerprint).unwrap();
+    let laptop = HostClient::connect(&host.addr, &host.fingerprint).unwrap();
+    let workshop = HostClient::connect(&host.addr, &host.fingerprint).unwrap();
 
     laptop.dispatch(&DispatchId("d-1".into()), CAMEO, "cameo5", vec![square_pass()]).unwrap();
 
@@ -58,14 +58,14 @@ fn the_client_cap_refuses_the_surplus_and_frees_a_slot_when_one_leaves() {
     let host = start_test_host();
     let mut attached: Vec<HostClient> = (0..MAX_CLIENTS)
         .map(|i| {
-            HostClient::connect(&host.addr, TOKEN, &host.fingerprint)
+            HostClient::connect(&host.addr, &host.fingerprint)
                 .unwrap_or_else(|e| panic!("client {i} of the cap should be served: {e}"))
         })
         .collect();
 
     // The surplus is dropped without ceremony — before TLS, so it surfaces as a failed connect.
     assert!(
-        HostClient::connect(&host.addr, TOKEN, &host.fingerprint).is_err(),
+        HostClient::connect(&host.addr, &host.fingerprint).is_err(),
         "the {}th client was served past the cap",
         MAX_CLIENTS + 1
     );
@@ -77,7 +77,7 @@ fn the_client_cap_refuses_the_surplus_and_frees_a_slot_when_one_leaves() {
     attached.pop();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if HostClient::connect(&host.addr, TOKEN, &host.fingerprint).is_ok() {
+        if HostClient::connect(&host.addr, &host.fingerprint).is_ok() {
             break;
         }
         assert!(Instant::now() < deadline, "a client left and its slot never came back");
@@ -110,7 +110,6 @@ fn serve_on_a_public_address(allow_public_bind: bool) -> std::io::Result<()> {
     let dir = tempfile::tempdir().unwrap();
     let config = Config {
         bind: "8.8.8.8:7878".parse().unwrap(),
-        tokens: [("test-client".to_string(), TOKEN.to_string())].into_iter().collect(),
         max_frame: cut_host::frame::DEFAULT_MAX_FRAME,
         cert_dir: dir.path().to_path_buf(),
     };
@@ -129,7 +128,6 @@ fn a_private_bind_is_served_without_the_override() {
     let dir = tempfile::tempdir().unwrap();
     let config = Config {
         bind: listener.local_addr().unwrap(),
-        tokens: [("test-client".to_string(), TOKEN.to_string())].into_iter().collect(),
         max_frame: cut_host::frame::DEFAULT_MAX_FRAME,
         cert_dir: dir.path().to_path_buf(),
     };

@@ -39,9 +39,6 @@ fn main() {
     if host.devices().is_empty() {
         eprintln!("cut host: no cutter is attached; clients will see an empty list");
     }
-    for name in config.tokens.keys() {
-        eprintln!("cut host: client `{name}` may connect");
-    }
 
     // Before serving, so the first Job a client dispatches is already covered.
     shutdown::guard(host.clone());

@@ -90,7 +90,7 @@ const UNCONFIRMED = {
 describe("forgetFrom", () => {
   it("keeps a host that refuses to be forgotten, and says why", async () => {
     // The Rust side refuses while a cut is active on that host: the desktop would otherwise
-    // discard the token for a Job it can no longer cancel.
+    // forget the host of a Job it can no longer cancel.
     const s = await runForget("host-1", async () => {
       throw BUSY;
     });
@@ -141,9 +141,8 @@ describe("forgetFrom", () => {
     expect(s.message).toBeNull();
   });
 
-  // The stored token is the Rust side's, kept until re-pairing replaces it. A refusal must leave
-  // the list untouched rather than half-erased: a host that plainly needs attention is better
-  // than one whose credentials this side quietly dropped.
+  // A refusal must leave the list untouched rather than half-erased: a host that plainly needs
+  // attention is better than one this side quietly forgot.
   it("leaves the list exactly as it was when the forget is refused", async () => {
     const s = await runForget("host-1", async () => {
       throw BUSY;

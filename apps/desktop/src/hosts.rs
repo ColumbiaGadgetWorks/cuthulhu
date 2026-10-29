@@ -2,7 +2,7 @@
 
 //! The Cut Hosts this desktop has paired with.
 //!
-//! Holds a token per host, so the file is `0600` and written atomically. Losing it means
+//! Written atomically, and `0600` since it says which hosts this desktop trusts. Losing it means
 //! re-pairing every Pi by hand, which is the single most-reported complaint about the
 //! comparable feature in Bambu Studio — persistence being dull and correct is the point.
 
@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use driver_core::{DeviceInfo, HostId};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A `token` field in a file from before sign-in was removed is ignored when read, and gone after
+/// the next save.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairedHost {
     pub id: HostId,
     /// What the operator calls it. Free to change without invalidating anything, which is why
@@ -21,22 +23,6 @@ pub struct PairedHost {
     pub address: String,
     /// The certificate fingerprint accepted at pairing. A change is a refusal, never a prompt.
     pub fingerprint: String,
-    pub token: String,
-}
-
-/// Hand-written rather than derived, mirroring `cut_host::config::Config`: `token` is the secret
-/// that authorizes this desktop to make a blade move, and a derived `Debug` would print it
-/// verbatim into whatever log or panic message formatted a `PairedHost`.
-impl std::fmt::Debug for PairedHost {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PairedHost")
-            .field("id", &self.id)
-            .field("name", &self.name)
-            .field("address", &self.address)
-            .field("fingerprint", &self.fingerprint)
-            .field("token", &"<redacted>")
-            .finish()
-    }
 }
 
 #[derive(Debug)]
@@ -83,7 +69,7 @@ pub fn save(path: &Path, hosts: &[PairedHost]) -> Result<(), HostsError> {
     std::io::Write::write_all(&mut tmp, json.as_bytes())
         .map_err(|e| HostsError::Unwritable(e.to_string()))?;
 
-    // Set on the temp file before the rename, so the tokens are never briefly world-readable
+    // Set on the temp file before the rename, so the file is never briefly world-readable
     // at the destination — and re-applied on every save, since a rewrite would otherwise
     // inherit whatever the temp file's default mode happened to be.
     #[cfg(unix)]
@@ -188,17 +174,7 @@ mod tests {
             name: name.into(),
             address: "cuthulhu-pi.local:7878".into(),
             fingerprint: "aa:bb:cc".into(),
-            token: "s3cret".into(),
         }
-    }
-
-    /// A stray `{:?}` in a log or panic message must not leak the token, mirroring
-    /// `cut_host::config::Config`'s hand-written `Debug`.
-    #[test]
-    fn debug_never_prints_the_token() {
-        let debugged = format!("{:?}", a_host("host-1", "Workshop Pi"));
-        assert!(!debugged.contains("s3cret"), "{debugged}");
-        assert!(debugged.contains("<redacted>"), "{debugged}");
     }
 
     #[test]
@@ -211,6 +187,16 @@ mod tests {
         assert_eq!(load(&path).unwrap(), written);
     }
 
+    /// A hosts file saved while sign-in existed must still load, minus its tokens.
+    #[test]
+    fn a_file_from_before_sign_in_was_removed_still_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hosts.json");
+        let old = r#"[{"id":"host-1","name":"Workshop Pi","address":"cuthulhu-pi.local:7878","fingerprint":"aa:bb:cc","token":"s3cret"}]"#;
+        std::fs::write(&path, old).unwrap();
+        assert_eq!(load(&path).unwrap(), vec![a_host("host-1", "Workshop Pi")]);
+    }
+
     /// A user who has never paired anything is not an error state.
     #[test]
     fn a_missing_file_is_no_hosts_rather_than_a_failure() {
@@ -218,7 +204,7 @@ mod tests {
         assert_eq!(load(&dir.path().join("nothing-here.json")).unwrap(), Vec::new());
     }
 
-    /// The file holds every client's token, so it must not be world-readable. Checked because a
+    /// Which hosts this desktop trusts is not for other users to edit or read. Checked because a
     /// mode set at creation is easy to lose to a later rewrite.
     #[cfg(unix)]
     #[test]
@@ -230,7 +216,7 @@ mod tests {
         save(&path, &[a_host("host-1", "Renamed")]).unwrap(); // a rewrite must not widen it
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "hosts.json holds tokens: {mode:o}");
+        assert_eq!(mode, 0o600, "hosts.json must stay private: {mode:o}");
     }
 
     /// A corrupt file must not be silently read as "no hosts paired" — that would look exactly
