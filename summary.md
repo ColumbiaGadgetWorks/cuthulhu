@@ -20,8 +20,8 @@ was tested on real hardware and cut correctly.
 
 | Repository | What it holds |
 |---|---|
-| `adman234/cuthulhu` (fork of `vcolombo/cuthulhu`) | **The project.** All code lives here. Work goes to `main`. |
-| `adman234/cuthulhu`, branch `cameo1-support` | The Cameo 1 driver only, kept clean to send upstream as a PR. |
+| `ColumbiaGadgetWorks/cuthulhu` (fork of `vcolombo/cuthulhu`; moved here from `adman234/cuthulhu`) | **The project.** All code lives here. Work goes to `main`. |
+| `ColumbiaGadgetWorks/cuthulhu`, branch `cameo1-support` | The Cameo 1 driver only, kept clean to send upstream as a PR. |
 | `columbiagadgetworks/cameo-1-linux`, branch `claude/vigilant-ptolemy-j190cf` | The first plan (`PLAN.md`) and the software research (`docs/SOFTWARE-RESEARCH.md`). Historical. |
 
 Cuthulhu is GPLv3 cutting software: a Rust engine with a Tauri + React desktop app, a CLI, a Cut
@@ -57,7 +57,7 @@ Host daemon and (in this fork) a browser UI. Read `CLAUDE.md` and `CONTEXT.md` b
      log with CSV export, a shared presets file, and material notes with an advisory blade depth.
    - Packaging and docs: a Linux `.deb` with the udev rule and a menu entry, a USB test that skips
      when there is no USB bus, and a rewritten README.
-6. **Releases** (added in a parallel session, PRs #1–#7 on the fork):
+6. **Releases** (added in a parallel session, PRs #1–#7):
    - The `v*` tags build a Windows installer and Linux `.deb`, `.rpm` and AppImage.
    - The `web-v*` tags build the Pi web UI for arm64, armhf (32-bit) and amd64.
 7. **Browser UI on the Pi** (`apps/web`, PRs #4–#7):
@@ -80,7 +80,7 @@ Host daemon and (in this fork) a browser UI. Read `CLAUDE.md` and `CONTEXT.md` b
 **On the Pi** (install, or upgrade over SSH):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/adman234/cuthulhu/main/apps/web/pi/get.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/ColumbiaGadgetWorks/cuthulhu/main/apps/web/pi/get.sh | sudo sh
 ```
 
 This picks the right package for the Pi (64-bit or 32-bit), installs the `cuthulhu-web` service on
@@ -128,6 +128,12 @@ installer and the Linux `.deb`, `.rpm` and AppImage.
 - **Still unverified on hardware, even though basic cutting works:** track enhancing, pen mode,
   registration-mark search (print & cut, which waits up to 40 s for the marks), test cut, and the
   print & cut margins. They are listed in the Cameo 1 section of `MANUAL-CHECKLIST.md`.
+- **The repository moved** from `adman234/cuthulhu` to `ColumbiaGadgetWorks/cuthulhu`. GitHub
+  redirects the old name, so a Pi on web-v0.1.4 or older still finds updates through it. The new
+  name is the default from the next `web-v*` release on, so release once soon, before anything
+  else is created at the old name. A Claude session has to be given access to the repository under
+  its new name, and a checkout's `origin` should be pointed at it
+  (`git remote set-url origin https://github.com/ColumbiaGadgetWorks/cuthulhu`).
 - **There is no sign-in, on purpose.** Anyone on the network can use the cutter. Keep the Pi on the
   makerspace LAN and never forward port 8080 or 7878 to the internet. The web page cannot change
   which GitHub repository updates come from, because an update runs as root. To change it, use SSH;

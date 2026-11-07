@@ -48,7 +48,7 @@ If the cutter was already plugged in, unplug and replug it once so the new udev 
 To upgrade, use **Updates…** in the page (below), or over SSH:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/adman234/cuthulhu/main/apps/web/pi/get.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/ColumbiaGadgetWorks/cuthulhu/main/apps/web/pi/get.sh | sudo sh
 ```
 
 That downloads the newest `web-v…` release for this Pi and runs its `install.sh`; saved projects
@@ -84,7 +84,7 @@ and a root systemd unit (`cuthulhu-web-update.path`) downloads that release from
 `install.sh`. Its progress is in `/var/lib/cuthulhu-web-update/status.json`, and its log in
 `journalctl -u cuthulhu-web-update`.
 
-Updates come from `adman234/cuthulhu`. The page cannot change that: an update runs as root, and
+Updates come from `ColumbiaGadgetWorks/cuthulhu`. The page cannot change that: an update runs as root, and
 the page has no sign-in, so whoever could choose where it comes from could run anything on the Pi.
 To take updates from another repository, change it over SSH:
 

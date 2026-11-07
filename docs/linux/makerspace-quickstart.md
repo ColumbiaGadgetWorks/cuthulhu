@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Makerspace quick start: Silhouette Cameo 1 on Linux
 
-This fork (`adman234/cuthulhu`) adds two things: Cameo 1 support (`cameo1`), and a simple window
+This fork (`ColumbiaGadgetWorks/cuthulhu`) adds two things: Cameo 1 support (`cameo1`), and a simple window
 laid out like LightBurn. The Cameo 1 support is meant to go upstream once it has been verified on
 hardware. Until the hardware checklist in `apps/desktop/MANUAL-CHECKLIST.md` (§ Cameo 1) is
 ticked, treat every cut as a test cut and use scrap media.
@@ -20,7 +20,7 @@ curl https://sh.rustup.rs -sSf | sh && . ~/.cargo/env   # Rust, if not installed
 # Debian 12's own nodejs is 18, so take it from NodeSource (or nvm) instead.
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
 cargo install tauri-cli --version '^2' --locked   # once
-git clone https://github.com/adman234/cuthulhu && cd cuthulhu
+git clone https://github.com/ColumbiaGadgetWorks/cuthulhu && cd cuthulhu
 npm --prefix apps/desktop/ui ci                   # the UI's dependencies, once per checkout
 (cd apps/desktop && cargo tauri build --bundles deb,appimage)
 # → target/release/bundle/deb/cuthulhu_0.2.2_amd64.deb

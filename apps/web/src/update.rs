@@ -18,8 +18,10 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// Where releases come from until someone chooses otherwise: the fork that publishes `web-v*`.
-pub const DEFAULT_REPO: &str = "adman234/cuthulhu";
+/// Where releases come from until someone chooses otherwise: the repository that publishes
+/// `web-v*`. It moved from `adman234/cuthulhu`; GitHub redirects the old name, so a Pi built before
+/// the move still finds its updates, but only for as long as nobody creates a repository there.
+pub const DEFAULT_REPO: &str = "ColumbiaGadgetWorks/cuthulhu";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The release package this build came from, as `dpkg --print-architecture` names it.
@@ -156,6 +158,7 @@ mod tests {
     #[test]
     fn repositories_and_tags_are_only_the_shapes_github_and_the_release_use() {
         assert!(valid_repo("adman234/cuthulhu"));
+        assert!(valid_repo("ColumbiaGadgetWorks/cuthulhu"));
         assert!(valid_repo("some-org/cut.hulhu_2"));
         for bad in ["", "a", "a/b/c", "/b", "a/", "../x", "a/.x", "a b/c", "a/b;rm -rf /", "a/$(x)"] {
             assert!(!valid_repo(bad), "{bad:?}");
