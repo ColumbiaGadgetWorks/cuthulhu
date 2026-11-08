@@ -79,7 +79,24 @@ fn resolve_face(db: &fontdb::Database, family: &str) -> Option<fontdb::ID> {
         families: &[fontdb::Family::Name(family), fontdb::Family::SansSerif],
         ..Default::default()
     })
-    .or_else(|| db.faces().next().map(|f| f.id))
+    .or_else(|| {
+        // Last resort: an installed face that can at least draw Latin text, before any face
+        // at all. Enumeration order is whatever the directory walk returns, and a runner or
+        // workstation can list a symbol or emoji font first; substituting that for a missing
+        // family would draw nothing and refuse a plan that another installed face could cut.
+        db.faces()
+            .find(|f| {
+                db.with_face_data(f.id, |data, idx| {
+                    Face::parse(data, idx)
+                        .ok()
+                        .and_then(|face| face.glyph_index('A'))
+                        .map_or(false, |g| g != GlyphId(0))
+                })
+                .unwrap_or(false)
+            })
+            .or_else(|| db.faces().next())
+            .map(|f| f.id)
+    })
 }
 
 /// Baseline to baseline, in ems. ponytail: one fixed leading for every face, rather than the

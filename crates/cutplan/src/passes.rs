@@ -460,21 +460,11 @@ mod tests {
         let mut bad_doc = ed.doc.clone();
         bad_doc.apply(Delta(vec![NodeOp::Add { parent: root, node, index: usize::MAX }]));
         match any_available_family() {
-            // The substitute is whichever face `resolve_face` reaches last, and on a hosted
-            // runner that can be one with no Latin glyphs. Planning then refuses in words
-            // (`NoGlyphs`) rather than hard-failing, and that is the contract this test pins:
-            // an unknown family never produces `NoFont` while any face is installed.
-            Some(_) => match plan_passes(&bad_doc) {
-                Ok(planned) => {
-                    let pass = planned.passes.last().unwrap();
-                    assert!(!pass.shapes.last().unwrap().polylines.is_empty());
-                }
-                Err(e) => assert_eq!(
-                    e,
-                    PlanError::BadShape(bad_id, geometry::GeomError::NoGlyphs.to_string()),
-                    "a substituted face may fail to draw the text, but never as NoFont"
-                ),
-            },
+            Some(_) => {
+                let planned = plan_passes(&bad_doc).expect("fallback should have substituted a font");
+                let pass = planned.passes.last().unwrap();
+                assert!(!pass.shapes.last().unwrap().polylines.is_empty());
+            }
             None => assert_eq!(plan_passes(&bad_doc),
                 Err(PlanError::BadShape(bad_id, geometry::GeomError::NoFont.to_string()))),
         }
