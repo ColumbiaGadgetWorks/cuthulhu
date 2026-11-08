@@ -800,13 +800,18 @@ mod tests {
             Err(CmdError::NotFound));
     }
 
-    /// Picks whatever font family is actually installed, instead of hardcoding "Helvetica"
-    /// (macOS-only, absent on Linux CI). Returns None on a headless box with zero system faces.
+    /// Picks an installed font family that can draw Latin text, instead of hardcoding
+    /// "Helvetica" (macOS-only, absent on Linux CI). Returns None on a headless box with no
+    /// such face. Searched rather than taking the first face: enumeration order is whatever
+    /// the directory walk returns, and a hosted runner can list "Noto Color Emoji" first,
+    /// which draws none of these tests' letters.
     fn any_available_family() -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let name = db.faces().next().and_then(|f| f.families.first().map(|(name, _)| name.clone()));
-        name
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| geometry::text_to_path(name, 10.0, "Abcdefghi Hi").is_ok());
+        found
     }
 
     #[test]
