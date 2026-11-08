@@ -171,13 +171,16 @@ pub fn text_to_path(family: &str, size_mm: f64, text: &str) -> Result<Path, Geom
 mod tests {
     use super::*;
 
-    /// Picks whatever font family is actually installed, instead of hardcoding "Helvetica"
-    /// (macOS-only). Returns None on a headless CI box with zero system faces.
+    /// Picks an installed family that can draw Latin text, instead of hardcoding "Helvetica"
+    /// (macOS-only). Searched, not the first face: a hosted runner can list "Noto Color Emoji"
+    /// first, which maps none of "Ab". Returns None on a headless box with no such face.
     fn any_available_family() -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let name = db.faces().next().and_then(|f| f.families.first().map(|(name, _)| name.clone()));
-        name
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| text_to_path(name, 10.0, "Ab").is_ok());
+        found
     }
 
     #[test]

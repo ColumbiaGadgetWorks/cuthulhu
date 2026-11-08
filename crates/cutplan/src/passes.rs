@@ -348,8 +348,10 @@ mod tests {
     fn any_available_family() -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let name = db.faces().next().and_then(|f| f.families.first().map(|(name, _)| name.clone()));
-        name
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| geometry::text_to_path(name, 10.0, "Ab").is_ok());
+        found
     }
 
     /// A family installed here that can draw `text`, or `None` if no installed face can.
