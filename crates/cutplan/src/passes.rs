@@ -348,8 +348,25 @@ mod tests {
     fn any_available_family() -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let name = db.faces().next().and_then(|f| f.families.first().map(|(name, _)| name.clone()));
-        name
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| geometry::text_to_path(name, 10.0, "Ab").is_ok());
+        found
+    }
+
+    /// A family installed here that can draw `text`, or `None` if no installed face can.
+    ///
+    /// Searched rather than taking the first face: font enumeration order is whatever the
+    /// directory walk returns, and a hosted runner's first face can be a symbol or emoji
+    /// font that maps none of "Hi" (CI run 18 failed on exactly that). The premise the test
+    /// needs is "a face that draws Latin text", not "whichever face is listed first".
+    fn family_that_can_draw(text: &str) -> Option<String> {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| geometry::text_to_path(name, 10.0, text).is_ok());
+        found
     }
 
     #[test]
@@ -426,7 +443,7 @@ mod tests {
         let mut ed = Editor::new();
         let root = ed.doc.root;
 
-        if let Some(family) = any_available_family() {
+        if let Some(family) = family_that_can_draw("Hi") {
             let id = ed.doc.ids.next();
             let node = Node::shape(id, ShapeKind::Text { family, size_mm: 10.0, text: "Hi".into(), d: String::new() });
             ed.commit(Delta(vec![NodeOp::Add { parent: root, node, index: usize::MAX }]));

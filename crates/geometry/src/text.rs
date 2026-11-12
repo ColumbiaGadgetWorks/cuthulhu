@@ -79,7 +79,24 @@ fn resolve_face(db: &fontdb::Database, family: &str) -> Option<fontdb::ID> {
         families: &[fontdb::Family::Name(family), fontdb::Family::SansSerif],
         ..Default::default()
     })
-    .or_else(|| db.faces().next().map(|f| f.id))
+    .or_else(|| {
+        // Last resort: an installed face that can at least draw Latin text, before any face
+        // at all. Enumeration order is whatever the directory walk returns, and a runner or
+        // workstation can list a symbol or emoji font first; substituting that for a missing
+        // family would draw nothing and refuse a plan that another installed face could cut.
+        db.faces()
+            .find(|f| {
+                db.with_face_data(f.id, |data, idx| {
+                    Face::parse(data, idx)
+                        .ok()
+                        .and_then(|face| face.glyph_index('A'))
+                        .map_or(false, |g| g != GlyphId(0))
+                })
+                .unwrap_or(false)
+            })
+            .or_else(|| db.faces().next())
+            .map(|f| f.id)
+    })
 }
 
 /// Baseline to baseline, in ems. ponytail: one fixed leading for every face, rather than the
@@ -154,13 +171,16 @@ pub fn text_to_path(family: &str, size_mm: f64, text: &str) -> Result<Path, Geom
 mod tests {
     use super::*;
 
-    /// Picks whatever font family is actually installed, instead of hardcoding "Helvetica"
-    /// (macOS-only). Returns None on a headless CI box with zero system faces.
+    /// Picks an installed family that can draw Latin text, instead of hardcoding "Helvetica"
+    /// (macOS-only). Searched, not the first face: a hosted runner can list "Noto Color Emoji"
+    /// first, which maps none of "Ab". Returns None on a headless box with no such face.
     fn any_available_family() -> Option<String> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let name = db.faces().next().and_then(|f| f.families.first().map(|(name, _)| name.clone()));
-        name
+        let found = db.faces()
+            .filter_map(|f| f.families.first().map(|(name, _)| name.clone()))
+            .find(|name| text_to_path(name, 10.0, "Ab").is_ok());
+        found
     }
 
     #[test]
